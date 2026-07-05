@@ -1,0 +1,29 @@
+{
+  "year": 2025,
+  "estimated": false,
+  "note": "Plafonds 2025 confirmés. FRV Québec: le plafond MAXIMUM de retrait est aboli depuis le 1er janvier 2025.",
+  "rrsp": {
+    "annual_max": 32490,
+    "earned_income_rate": 0.18,
+    "conversion_age": 71
+  },
+  "tfsa": {
+    "annual_limit": 7000,
+    "cumulative_since_2009": 102000
+  },
+  "fhsa": {
+    "annual_limit": 8000,
+    "lifetime_limit": 40000,
+    "max_carryforward": 8000,
+    "max_years_open": 15,
+    "max_age": 71
+  },
+  "hbp": {
+    "max_withdrawal": 60000,
+    "repayment_years": 15,
+    "grace_years": 2
+  },
+  "lif_quebec": {
+    "max_abolished_since": 2025
+  }
+}
