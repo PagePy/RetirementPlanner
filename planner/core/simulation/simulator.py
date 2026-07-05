@@ -141,13 +141,18 @@ class HouseholdSimulator:
 
             # 2. Croissance (les distributions deviennent imposables cette année)
             a = st.cfg.accounts
-            st.reer.grow(a.reer_return)
-            st.celi.grow(a.celi_return)
-            st.celiapp.grow(a.celiapp_return)
-            st.cri_balance *= (1 + a.cri_return)
-            st.ferr.grow(a.ferr_return)
-            st.frv.grow(a.frv_return)
-            inv = st.taxable.grow(a.taxable_return)
+            delta = self.scen.return_delta_by_year.get(year, 0.0)
+
+            def shocked(rate: float) -> float:
+                return max(-0.95, rate + delta)
+
+            st.reer.grow(shocked(a.reer_return))
+            st.celi.grow(shocked(a.celi_return))
+            st.celiapp.grow(shocked(a.celiapp_return))
+            st.cri_balance *= (1 + shocked(a.cri_return))
+            st.ferr.grow(shocked(a.ferr_return))
+            st.frv.grow(shocked(a.frv_return))
+            inv = st.taxable.grow(shocked(a.taxable_return))
             pr.investment_interest = inv["interest"]
             pr.investment_dividends = inv["eligible_dividends"]
 

@@ -92,6 +92,10 @@ class ScenarioConfig:
     start_year: int = 2026
     inflation: float = 0.02
     end_year: int | None = None  # défaut: fin de la plus longue espérance de vie
+    # Choc de rendement par année: delta ADDITIF appliqué à tous les comptes
+    # (ex: {2030: -0.30} = krach de -30 points en 2030). Utilisé par les
+    # tests de stress et le Monte Carlo.
+    return_delta_by_year: dict[int, float] = field(default_factory=dict)
 
 
 @dataclass
