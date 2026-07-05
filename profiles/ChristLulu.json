@@ -1,0 +1,63 @@
+{
+  "profile_name": "ChristLulu",
+  "household_type": "\ud83d\udc64 C\u00e9libataire",
+  "p1": {
+    "name": "christian",
+    "birth_year": 1971,
+    "salary": 157000.0,
+    "salary_increase": 3.0,
+    "life_expectancy": 94
+  },
+  "acc1": {
+    "REER_balance": 253000.0,
+    "REER_return": 6.0,
+    "CELI_balance": 65000.0,
+    "CELI_return": 6.0,
+    "CRI_balance": 325000.0,
+    "CRI_return": 6.0,
+    "FERR_balance": 0.0,
+    "FERR_return": 5.0,
+    "FRV_balance": 0.0,
+    "FRV_return": 5.0,
+    "Taxable_balance": 5000.0,
+    "Taxable_return": 10.0,
+    "Taxable_interest": 30.0,
+    "Taxable_dividends": 40.0,
+    "Taxable_capital": 30.0
+  },
+  "contrib1": {
+    "reer_percent": 5.0,
+    "reer_fixed": 0.0,
+    "celi_percent": 0.0,
+    "celi_fixed": 7000.0,
+    "cri_percent": 13.0,
+    "cri_fixed": 0.0,
+    "nonreg_percent": 0.0,
+    "nonreg_fixed": 0.0
+  },
+  "retire1": {
+    "retirement_age": 60,
+    "target_income": 9000.0,
+    "income_indexed": false,
+    "rrq_age": 65,
+    "oas_age": 65,
+    "rrq_amount_65": 1250.0,
+    "celi_strategy": "\ud83d\udeab Ne jamais utiliser (100% pour h\u00e9ritiers)",
+    "transfer_cap_percent": 100.0,
+    "longevity_buffer": 0.0,
+    "rente_pd": 45000.0,
+    "rente_pd_age_debut": 60,
+    "rente_pd_age_normal": 65,
+    "rente_pd_penalite_annuelle": 3.0
+  },
+  "tax1": {
+    "income_split": false,
+    "income_split_percent": 0
+  },
+  "special_projects": [],
+  "scen": {
+    "start_year": 2025,
+    "end_year": 2065,
+    "inflation": 2.0
+  }
+}

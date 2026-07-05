@@ -1,0 +1,104 @@
+{
+  "profile_name": "Profil_20251130",
+  "household_type": "\ud83d\udc65 Couple",
+  "p1": {
+    "name": "christian",
+    "birth_year": 1971,
+    "salary": 157000.0,
+    "pension_db": 3400.0,
+    "life_expectancy": 94
+  },
+  "acc1": {
+    "REER_balance": 253000.0,
+    "REER_return": 6.0,
+    "CELI_balance": 65000.0,
+    "CELI_return": 6.0,
+    "CRI_balance": 325000.0,
+    "CRI_return": 6.0,
+    "FERR_balance": 0.0,
+    "FERR_return": 4.0,
+    "FRV_balance": 0.0,
+    "FRV_return": 4.0,
+    "Taxable_balance": 0.0,
+    "Taxable_return": 3.5,
+    "Taxable_interest": 30.0,
+    "Taxable_dividends": 40.0,
+    "Taxable_capital": 30.0
+  },
+  "contrib1": {
+    "reer_percent": 5.0,
+    "reer_fixed": 0.0,
+    "celi_percent": 0.0,
+    "celi_fixed": 7000.0,
+    "cri_percent": 13.0,
+    "cri_fixed": 0.0,
+    "nonreg_percent": 0.0,
+    "nonreg_fixed": 0.0
+  },
+  "retire1": {
+    "retirement_age": 60,
+    "target_income": 10000.0,
+    "income_indexed": false,
+    "rrq_age": 65,
+    "oas_age": 65,
+    "withdrawal_strategy": "CELI en dernier (h\u00e9ritage)",
+    "longevity_buffer": 0.0
+  },
+  "tax1": {
+    "income_split": true,
+    "income_split_percent": 100
+  },
+  "p2": {
+    "name": "lucia",
+    "birth_year": 1970,
+    "salary": 82000.0,
+    "pension_db": 1000.0,
+    "life_expectancy": 96
+  },
+  "acc2": {
+    "REER_balance": 308000.0,
+    "REER_return": 6.0,
+    "CELI_balance": 35000.0,
+    "CELI_return": 6.0,
+    "CRI_balance": 29000.0,
+    "CRI_return": 6.0,
+    "FERR_balance": 0.0,
+    "FERR_return": 4.0,
+    "FRV_balance": 0.0,
+    "FRV_return": 4.0,
+    "Taxable_balance": 0.0,
+    "Taxable_return": 3.5,
+    "Taxable_interest": 30.0,
+    "Taxable_dividends": 40.0,
+    "Taxable_capital": 30.0
+  },
+  "contrib2": {
+    "reer_percent": 5.0,
+    "reer_fixed": 0.0,
+    "celi_percent": 0.0,
+    "celi_fixed": 7000.0,
+    "cri_percent": 0.0,
+    "cri_fixed": 0.0,
+    "nonreg_percent": 0.0,
+    "nonreg_fixed": 0.0
+  },
+  "retire2": {
+    "retirement_age": 65,
+    "target_income": 5000.0,
+    "income_indexed": false,
+    "rrq_age": 71,
+    "oas_age": 65,
+    "withdrawal_strategy": "CELI en dernier (h\u00e9ritage)",
+    "longevity_buffer": 0.0
+  },
+  "tax2": {
+    "income_split": true,
+    "income_split_percent": 50
+  },
+  "special_projects": [],
+  "scen": {
+    "start_year": 2025,
+    "end_year": 2066,
+    "inflation": 2.0
+  }
+}

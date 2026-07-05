@@ -1,0 +1,63 @@
+{
+  "profile_name": "Marianne",
+  "household_type": "\ud83d\udc64 C\u00e9libataire",
+  "p1": {
+    "name": "Marianne",
+    "birth_year": 1999,
+    "salary": 70000.0,
+    "salary_increase": 3.0,
+    "life_expectancy": 96
+  },
+  "acc1": {
+    "REER_balance": 0.0,
+    "REER_return": 6.0,
+    "CELI_balance": 50000.0,
+    "CELI_return": 6.0,
+    "CRI_balance": 0.0,
+    "CRI_return": 4.5,
+    "FERR_balance": 0.0,
+    "FERR_return": 4.0,
+    "FRV_balance": 0.0,
+    "FRV_return": 4.0,
+    "Taxable_balance": 0.0,
+    "Taxable_return": 3.5,
+    "Taxable_interest": 30.0,
+    "Taxable_dividends": 40.0,
+    "Taxable_capital": 30.0
+  },
+  "contrib1": {
+    "reer_percent": 18.0,
+    "reer_fixed": 0.0,
+    "celi_percent": 5.0,
+    "celi_fixed": 7000.0,
+    "cri_percent": 0.0,
+    "cri_fixed": 0.0,
+    "nonreg_percent": 0.0,
+    "nonreg_fixed": 0.0
+  },
+  "retire1": {
+    "retirement_age": 65,
+    "target_income": 5000.0,
+    "income_indexed": true,
+    "rrq_age": 65,
+    "oas_age": 65,
+    "rrq_amount_65": 1250.0,
+    "celi_strategy": "\u23f3 En dernier recours (garder si possible pour h\u00e9ritage)",
+    "transfer_cap_percent": 100.0,
+    "longevity_buffer": 0.0,
+    "rente_pd": 0.0,
+    "rente_pd_age_debut": 65,
+    "rente_pd_age_normal": 65,
+    "rente_pd_penalite_annuelle": 6.0
+  },
+  "tax1": {
+    "income_split": false,
+    "income_split_percent": 0
+  },
+  "special_projects": [],
+  "scen": {
+    "start_year": 2025,
+    "end_year": 2095,
+    "inflation": 2.0
+  }
+}
