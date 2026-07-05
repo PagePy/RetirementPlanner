@@ -5,8 +5,14 @@ __pycache__/
 
 # Virtual environments
 .venv/
+.venv-*/
 venv/
 env/
+
+# Packaging artifacts
+*.egg-info/
+build/
+dist/
 
 # Test and tooling caches
 .pytest_cache/

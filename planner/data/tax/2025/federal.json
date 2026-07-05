@@ -1,0 +1,28 @@
+{
+  "year": 2025,
+  "estimated": false,
+  "note": "Valeurs 2025 confirmées. Taux du premier palier réduit à 14,5% (mesure du 1er juillet 2025).",
+  "brackets": [
+    [57375, 0.145],
+    [114750, 0.205],
+    [177882, 0.26],
+    [253414, 0.29],
+    [null, 0.33]
+  ],
+  "credit_rate": 0.145,
+  "bpa_max": 16129,
+  "bpa_min": 14538,
+  "bpa_phaseout_start": 177882,
+  "bpa_phaseout_end": 253414,
+  "age_amount_max": 9028,
+  "age_amount_threshold": 45522,
+  "age_amount_reduction_rate": 0.15,
+  "age_eligibility": 65,
+  "pension_credit_max": 2000,
+  "capital_gains_inclusion": 0.5,
+  "dividends": {
+    "eligible": {"gross_up": 0.38, "credit_rate_on_grossed_up": 0.150198},
+    "non_eligible": {"gross_up": 0.15, "credit_rate_on_grossed_up": 0.090301}
+  },
+  "quebec_abatement": 0.165
+}

@@ -1,0 +1,24 @@
+{
+  "year": 2026,
+  "estimated": true,
+  "note": "ESTIMATION: valeurs 2025 indexées à ~2%. À valider contre les publications officielles Revenu Québec avant usage réel.",
+  "brackets": [
+    [54320, 0.14],
+    [108625, 0.19],
+    [132182, 0.24],
+    [null, 0.2575]
+  ],
+  "credit_rate": 0.14,
+  "bpa": 18942,
+  "age_amount": 3984,
+  "age_eligibility": 65,
+  "pension_amount_max": 3539,
+  "living_alone_amount": 2171,
+  "senior_credits_reduction_rate": 0.1875,
+  "senior_credits_threshold": 42932,
+  "capital_gains_inclusion": 0.5,
+  "dividends": {
+    "eligible": {"credit_rate_on_grossed_up": 0.117},
+    "non_eligible": {"credit_rate_on_grossed_up": 0.0342}
+  }
+}

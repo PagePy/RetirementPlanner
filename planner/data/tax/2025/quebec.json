@@ -1,0 +1,24 @@
+{
+  "year": 2025,
+  "estimated": false,
+  "note": "Valeurs Québec 2025. Crédits d'âge/retraite/personne seule réduits à 18,75% du revenu familial net au-delà du seuil.",
+  "brackets": [
+    [53255, 0.14],
+    [106495, 0.19],
+    [129590, 0.24],
+    [null, 0.2575]
+  ],
+  "credit_rate": 0.14,
+  "bpa": 18571,
+  "age_amount": 3906,
+  "age_eligibility": 65,
+  "pension_amount_max": 3470,
+  "living_alone_amount": 2128,
+  "senior_credits_reduction_rate": 0.1875,
+  "senior_credits_threshold": 42090,
+  "capital_gains_inclusion": 0.5,
+  "dividends": {
+    "eligible": {"credit_rate_on_grossed_up": 0.117},
+    "non_eligible": {"credit_rate_on_grossed_up": 0.0342}
+  }
+}

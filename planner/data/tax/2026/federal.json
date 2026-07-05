@@ -1,0 +1,28 @@
+{
+  "year": 2026,
+  "estimated": true,
+  "note": "ESTIMATION: valeurs 2025 indexées à ~2%. À valider contre les publications officielles ARC/Revenu Québec avant usage réel. Premier palier fédéral à 14% (plein effet de la mesure 2025).",
+  "brackets": [
+    [58523, 0.14],
+    [117045, 0.205],
+    [181440, 0.26],
+    [258482, 0.29],
+    [null, 0.33]
+  ],
+  "credit_rate": 0.14,
+  "bpa_max": 16452,
+  "bpa_min": 14829,
+  "bpa_phaseout_start": 181440,
+  "bpa_phaseout_end": 258482,
+  "age_amount_max": 9209,
+  "age_amount_threshold": 46432,
+  "age_amount_reduction_rate": 0.15,
+  "age_eligibility": 65,
+  "pension_credit_max": 2000,
+  "capital_gains_inclusion": 0.5,
+  "dividends": {
+    "eligible": {"gross_up": 0.38, "credit_rate_on_grossed_up": 0.150198},
+    "non_eligible": {"gross_up": 0.15, "credit_rate_on_grossed_up": 0.090301}
+  },
+  "quebec_abatement": 0.165
+}

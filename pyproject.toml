@@ -1,0 +1,21 @@
+[project]
+name = "retirement-planner"
+version = "0.1.0"
+description = "Planificateur de retraite professionnel (Canada) — moteur de simulation, analyses de décaissement et outils d'objectifs"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+ui = ["nicegui>=2.0", "plotly>=5.0", "pandas>=2.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["planner*"]
