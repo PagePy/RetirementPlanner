@@ -163,11 +163,16 @@ class HouseholdSimulator:
             else:
                 self._guaranteed_income(st, pr, year, age)
 
-        # 4b. Retraits pour combler la cible du ménage
-        target = self._year_target(year)
-        hh_result.target_net = target
-        hh_result.special_expenses = self.hh.special_expenses.get(year, 0.0)
-        self._solve_withdrawals(year, alive_states, person_results, target)
+        # 4b. Retraits pour combler la cible du ménage.
+        # La cible ne s'applique qu'à partir de la retraite: pendant
+        # l'accumulation, le ménage vit de ses salaires et le solveur ne
+        # couvre que les dépenses spéciales de l'année.
+        any_retired = any(pr.retired for pr in person_results if pr.alive)
+        special = self.hh.special_expenses.get(year, 0.0)
+        target = self._year_target(year) if any_retired else None
+        hh_result.target_net = target if target is not None else special
+        hh_result.special_expenses = special
+        self._solve_withdrawals(year, alive_states, person_results, target, special)
 
         # 5. Impôts finaux avec fractionnement optimal
         self._finalize_taxes(year, person_results)
@@ -194,7 +199,8 @@ class HouseholdSimulator:
         hh_result.net_cash = sum(p.net_cash for p in person_results)
         hh_result.total_tax = sum(p.tax_total + p.oas_clawback for p in person_results)
         hh_result.total_wealth = sum(p.wealth for p in person_results)
-        hh_result.target_gap = hh_result.net_cash - target
+        hh_result.target_gap = (hh_result.net_cash - target
+                                if target is not None else 0.0)
         return hh_result
 
     # ---------- décès ----------
@@ -357,9 +363,15 @@ class HouseholdSimulator:
 
     def _solve_withdrawals(self, year: int, alive_states: list[_PersonState],
                            person_results: list[PersonYearResult],
-                           target: float) -> None:
+                           target: float | None, special: float = 0.0) -> None:
         extras: dict[int, dict] = {i: {} for i, s in enumerate(self.states) if s.alive}
         current_net = self._household_net(person_results, extras)
+        if target is None:
+            # Accumulation: le solveur ne couvre que les dépenses spéciales.
+            if special <= 0:
+                self._apply_extras(person_results, extras)
+                return
+            target = current_net + special
         gap = target - current_net
         if gap <= self.TOLERANCE:
             self._apply_extras(person_results, extras)
