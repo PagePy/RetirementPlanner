@@ -1,0 +1,37 @@
+{
+  "year": 2025,
+  "estimated": false,
+  "note": "Montants 2025 (moyennes annualisées des taux trimestriels SV/SRG). À valider contre Retraite Québec et Service Canada.",
+  "rrq": {
+    "max_monthly_at_65": 1433.44,
+    "min_start_age": 60,
+    "max_start_age": 72,
+    "early_reduction_per_month": 0.006,
+    "late_increase_per_month": 0.007,
+    "reference_age": 65,
+    "survivor_rate": 0.60,
+    "death_benefit": 2500
+  },
+  "oas": {
+    "monthly_65_74": 734.95,
+    "uplift_75_plus": 0.10,
+    "min_start_age": 65,
+    "max_start_age": 70,
+    "deferral_increase_per_month": 0.006,
+    "max_deferral_months": 60,
+    "clawback_threshold": 93454,
+    "clawback_rate": 0.15,
+    "full_pension_residence_years": 40
+  },
+  "gis": {
+    "single_max_monthly": 1097.75,
+    "single_reduction_rate": 0.50,
+    "couple_both_oas_each_max_monthly": 660.78,
+    "couple_reduction_rate_each": 0.25,
+    "employment_income_exemption": 5000,
+    "allowance_max_monthly": 1395.73,
+    "allowance_min_age": 60,
+    "allowance_max_age": 64,
+    "allowance_reduction_rate": 0.75
+  }
+}

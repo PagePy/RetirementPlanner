@@ -1,0 +1,37 @@
+{
+  "year": 2026,
+  "estimated": true,
+  "note": "ESTIMATION: valeurs 2025 indexées à ~2%. À valider contre Retraite Québec et Service Canada avant usage réel.",
+  "rrq": {
+    "max_monthly_at_65": 1462.11,
+    "min_start_age": 60,
+    "max_start_age": 72,
+    "early_reduction_per_month": 0.006,
+    "late_increase_per_month": 0.007,
+    "reference_age": 65,
+    "survivor_rate": 0.60,
+    "death_benefit": 2500
+  },
+  "oas": {
+    "monthly_65_74": 749.65,
+    "uplift_75_plus": 0.10,
+    "min_start_age": 65,
+    "max_start_age": 70,
+    "deferral_increase_per_month": 0.006,
+    "max_deferral_months": 60,
+    "clawback_threshold": 95323,
+    "clawback_rate": 0.15,
+    "full_pension_residence_years": 40
+  },
+  "gis": {
+    "single_max_monthly": 1119.71,
+    "single_reduction_rate": 0.50,
+    "couple_both_oas_each_max_monthly": 674.00,
+    "couple_reduction_rate_each": 0.25,
+    "employment_income_exemption": 5000,
+    "allowance_max_monthly": 1423.64,
+    "allowance_min_age": 60,
+    "allowance_max_age": 64,
+    "allowance_reduction_rate": 0.75
+  }
+}
