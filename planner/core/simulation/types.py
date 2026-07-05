@@ -1,6 +1,8 @@
 """Configurations et résultats de la simulation ménage."""
 from dataclasses import dataclass, field
 
+from planner.core.assets import DebtConfig, RealAssetConfig, VehicleReplacementConfig
+
 
 @dataclass
 class AccountsConfig:
@@ -78,6 +80,12 @@ class HouseholdConfig:
         default_factory=lambda: ["taxable", "reer", "ferr", "frv", "celi"])
     # Dépenses spéciales nettes {année: montant}
     special_expenses: dict[int, float] = field(default_factory=dict)
+    # Passifs du ménage (hypothèque, auto, cartes, prêts...)
+    debts: list[DebtConfig] = field(default_factory=list)
+    # Actifs réels (maison, chalet...) avec vente planifiée optionnelle
+    real_assets: list[RealAssetConfig] = field(default_factory=list)
+    # Plans de remplacement de véhicules (aux X années)
+    vehicle_plans: list[VehicleReplacementConfig] = field(default_factory=list)
     # Décès prématuré: {"person_index": int, "year": int}
     premature_death: dict | None = None
     use_spouse_age_for_ferr: bool = False
@@ -160,4 +168,17 @@ class HouseholdYearResult:
     target_gap: float = 0.0
     total_tax: float = 0.0
     total_wealth: float = 0.0
+    # Actifs réels et passifs
+    debt_service: float = 0.0        # paiements de dettes de l'année
+    debt_interest: float = 0.0
+    debts_balance: float = 0.0       # solde total des dettes (fin d'année)
+    real_assets_value: float = 0.0   # valeur des actifs réels (fin d'année)
+    real_assets_gain: float = 0.0    # gain latent imposable (non exonéré)
+    vehicle_expenses: float = 0.0    # remplacements de véhicules de l'année
+    asset_sale_proceeds: float = 0.0 # produits de ventes d'actifs de l'année
     persons: list[PersonYearResult] = field(default_factory=list)
+
+    @property
+    def net_worth(self) -> float:
+        """Valeur nette du ménage: financier + actifs réels − dettes."""
+        return self.total_wealth + self.real_assets_value - self.debts_balance

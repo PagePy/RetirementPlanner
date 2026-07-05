@@ -4,7 +4,10 @@ Règles de la disposition réputée au décès (sans conjoint survivant):
 - REER/CRI/FERR/FRV: la totalité du solde s'ajoute au revenu de la dernière
   déclaration (100% imposable).
 - Non-enregistré: le gain latent est réputé réalisé (inclusion 50%).
+- Actifs réels: résidence principale exonérée; autres (chalet, terrain...)
+  imposables sur le gain latent.
 - CELI/CELIAPP: transmis libres d'impôt.
+- Les dettes du ménage réduisent la succession nette.
 
 Avec conjoint survivant, le roulement diffère l'impôt — le simulateur le
 gère déjà; cette analyse répond à « que vaudrait la succession si le(s)
@@ -68,8 +71,8 @@ def estate_timeline(results: list[HouseholdYearResult],
                              province=province)
         registered = sum(p.bal_reer + p.bal_cri + p.bal_ferr + p.bal_frv
                          for p in alive)
-        gains = sum(p.taxable_unrealized_gain for p in alive)
-        gross = sum(p.wealth for p in alive)
+        gains = sum(p.taxable_unrealized_gain for p in alive) + hr.real_assets_gain
+        gross = sum(p.wealth for p in alive) + hr.real_assets_value
         # Tout imposé sur la déclaration du dernier survivant
         richest = max(alive, key=lambda p: p.taxable_income)
         inp = TaxInput(year=calc.year, age=richest.age,
@@ -82,5 +85,6 @@ def estate_timeline(results: list[HouseholdYearResult],
         timeline.append(EstateResult(
             year=hr.year, gross_estate=gross,
             registered_income_at_death=registered, unrealized_gains=gains,
-            tax_at_death=death_tax, net_estate=gross - death_tax))
+            tax_at_death=death_tax,
+            net_estate=gross - death_tax - hr.debts_balance))
     return timeline

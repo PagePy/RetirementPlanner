@@ -23,6 +23,7 @@ courante (hors SV) avant retraits additionnels.
 from dataclasses import dataclass, field
 
 from planner.core.accounts import REER, CELI, CELIAPP, FERR, FRV, Taxable
+from planner.core.assets import Debt, RealAsset
 from planner.core.benefits import RRQ, OAS, GIS
 from planner.core.simulation.splitting import (
     eligible_pension_for_splitting, optimize_pension_split, couple_tax_with_split)
@@ -63,6 +64,8 @@ class HouseholdSimulator:
         self.oas = OAS(self.start_year)
         self.gis = GIS(self.start_year)
         self.states = [self._init_state(p) for p in household.persons]
+        self.debts = [Debt(cfg=d) for d in household.debts]
+        self.assets = [RealAsset(cfg=a) for a in household.real_assets]
         if scenario.end_year:
             self.end_year = scenario.end_year
         else:
@@ -163,13 +166,23 @@ class HouseholdSimulator:
             else:
                 self._guaranteed_income(st, pr, year, age)
 
-        # 4b. Retraits pour combler la cible du ménage.
+        # 4b. Actifs réels et passifs du ménage
+        self._process_assets_and_debts(year, hh_result, alive_states)
+
+        # 4c. Retraits pour combler la cible du ménage.
         # La cible ne s'applique qu'à partir de la retraite: pendant
         # l'accumulation, le ménage vit de ses salaires et le solveur ne
-        # couvre que les dépenses spéciales de l'année.
+        # couvre que les besoins ponctuels (dépenses spéciales, véhicules).
+        # Le service de la dette en accumulation est supposé couvert par
+        # les salaires; à la retraite il s'ajoute à la cible.
         any_retired = any(pr.retired for pr in person_results if pr.alive)
-        special = self.hh.special_expenses.get(year, 0.0)
-        target = self._year_target(year) if any_retired else None
+        special = (self.hh.special_expenses.get(year, 0.0)
+                   + hh_result.vehicle_expenses)
+        if any_retired:
+            target = (self._year_target(year) + hh_result.debt_service
+                      + hh_result.vehicle_expenses)
+        else:
+            target = None
         hh_result.target_net = target if target is not None else special
         hh_result.special_expenses = special
         self._solve_withdrawals(year, alive_states, person_results, target, special)
@@ -199,9 +212,47 @@ class HouseholdSimulator:
         hh_result.net_cash = sum(p.net_cash for p in person_results)
         hh_result.total_tax = sum(p.tax_total + p.oas_clawback for p in person_results)
         hh_result.total_wealth = sum(p.wealth for p in person_results)
+        hh_result.debts_balance = sum(d.balance for d in self.debts)
+        hh_result.real_assets_value = sum(a.value for a in self.assets)
+        hh_result.real_assets_gain = sum(a.unrealized_gain for a in self.assets)
         hh_result.target_gap = (hh_result.net_cash - target
                                 if target is not None else 0.0)
         return hh_result
+
+    # ---------- actifs réels et passifs ----------
+    def _process_assets_and_debts(self, year: int,
+                                  hh_result: 'HouseholdYearResult',
+                                  alive_states: list) -> None:
+        # Service de la dette
+        for debt in self.debts:
+            service = debt.annual_service()
+            hh_result.debt_service += service["payment"]
+            hh_result.debt_interest += service["interest"]
+        # Appréciation puis ventes planifiées
+        recipient = alive_states[0] if alive_states else None
+        for asset in self.assets:
+            asset.appreciate()
+            if (asset.cfg.sale_year == year and not asset.sold
+                    and recipient is not None):
+                sale = asset.sell()
+                proceeds = sale["proceeds"]
+                # Rembourser la dette liée
+                if asset.cfg.linked_debt:
+                    for debt in self.debts:
+                        if debt.cfg.name == asset.cfg.linked_debt:
+                            proceeds -= debt.payoff()
+                            break
+                proceeds = max(0.0, proceeds)
+                # Le produit net va au compte non-enregistré (PBR = produit)
+                recipient.taxable.contribute(proceeds)
+                hh_result.asset_sale_proceeds += proceeds
+                # Gain imposable si non exonéré (résidence principale exonérée)
+                if sale["taxable_gain"] > 0:
+                    recipient._tax_situation["capital_gains"] += sale["taxable_gain"]
+        # Remplacements de véhicules (coût indexé)
+        for plan in self.hh.vehicle_plans:
+            if plan.cost_in_year(year):
+                hh_result.vehicle_expenses += self._index(plan.net_cost, year)
 
     # ---------- décès ----------
     def _handle_deaths(self, year: int) -> None:
