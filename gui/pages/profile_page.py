@@ -2,6 +2,15 @@
 from nicegui import ui
 
 
+DB_STATUS_LABELS = {
+    "none": "Aucun régime PD",
+    "active": "PD actif",
+    "deferred": "PD différé ou gelé",
+    "closed_salary_linked": "PD fermé, emploi toujours actif",
+    "in_payment": "PD déjà en paiement",
+}
+
+
 def _num(container_dict: dict, key: str, label: str, **kwargs):
     return ui.number(label, format="%.0f", **kwargs).bind_value(
         container_dict, key).classes("w-40")
@@ -34,11 +43,35 @@ def _person_form(p: dict, title: str):
 
         ui.separator()
         ui.label("Rente d'employeur (PD)").classes("font-bold")
+        ui.select(DB_STATUS_LABELS, label="Statut du régime PD") \
+            .bind_value(p, "db_status").classes("w-72") \
+            .tooltip("Choisissez le statut qui décrit le régime aujourd'hui.")
+        with ui.expansion("Comment choisir le statut de la rente PD ?", icon="help_outline") \
+                .classes("w-full max-w-3xl text-sm"):
+            ui.label("Aucun régime PD: la personne n'a pas de rente à prestations "
+                     "déterminées à recevoir.")
+            ui.label("PD actif: la personne participe toujours au régime; sa rente "
+                     "continue d'augmenter grâce au service et/ou au salaire.")
+            ui.label("PD différé ou gelé: la personne a quitté l'employeur ou le "
+                     "régime est fermé; la rente accumulée n'augmente plus avant son "
+                     "début, sauf règle d'indexation particulière du régime.")
+            ui.label("PD fermé, emploi toujours actif: la personne travaille encore "
+                     "pour l'employeur, mais n'accumule plus de service. La rente peut "
+                     "encore augmenter si la formule utilise les meilleures années de salaire.")
+            ui.label("PD déjà en paiement: la personne reçoit déjà cette rente. Entrez "
+                     "le montant annuel reçu aujourd'hui; aucune pénalité anticipée n'est "
+                     "appliquée.")
+            ui.label("Croissance PD active sert seulement au statut PD actif. Pour le "
+                     "statut fermé avec emploi actif, le logiciel utilise plutôt la "
+                     "croissance du salaire.").classes("text-gray-600")
         with ui.row().classes("gap-4 flex-wrap"):
-            _num(p, "db_pension", "Rente annuelle ($)")
+            _num(p, "db_pension", "Rente annuelle estimée ($)")
             _num(p, "db_start_age", "Âge de début")
             _num(p, "db_normal_age", "Âge normal (sans pénalité)")
             _pct(p, "db_penalty", "Pénalité/an anticipé")
+            _pct(p, "db_active_growth", "Croissance PD active")
+            ui.checkbox("Rente indexée une fois en paiement") \
+                .bind_value(p, "db_indexed")
 
         a = p["accounts"]
         ui.separator()
@@ -72,6 +105,19 @@ def _person_form(p: dict, title: str):
             _num(c, "celi_fixed", "CELI fixe ($)")
             _num(c, "celiapp_fixed", "CELIAPP fixe ($)")
             _num(c, "taxable_fixed", "Non-enr. fixe ($)")
+        with ui.row().classes("gap-4 flex-wrap"):
+            _pct(c, "taxable_pct", "Non-enr. % salaire")
+
+        ui.separator()
+        ui.label("Régime CD (alimente le CRI unique)").classes("font-bold")
+        ui.label("Les cotisations en % sont recalculées chaque année sur le "
+                 "salaire annuel courant.") \
+            .classes("text-sm text-gray-500")
+        with ui.row().classes("gap-4 flex-wrap"):
+            _pct(c, "dc_employee_pct", "CD employé % salaire")
+            _num(c, "dc_employee_fixed", "CD employé fixe annuel ($)")
+            _pct(c, "dc_employer_pct", "CD employeur % salaire")
+            _num(c, "dc_employer_fixed", "CD employeur fixe annuel ($)")
 
 
 def build(state: dict):

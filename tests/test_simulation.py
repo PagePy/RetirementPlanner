@@ -105,6 +105,179 @@ class TestSingle:
             if p.wd_taxable > 0:
                 assert p.wd_taxable_gain < p.wd_taxable
 
+    def test_aucun_pd_donne_rente_nulle(self):
+        person = single_person(
+            db_status="none",
+            db_pension=25000.0,
+            retirement_age=65,
+            accounts=AccountsConfig(celi_balance=10000.0),
+            contributions=ContributionsConfig(),
+        )
+        results = run_single(person)
+        p65 = next(r.persons[0] for r in results if r.persons[0].age == 65)
+        assert p65.db_pension == 0.0
+
+    def test_pd_actif_croit_avec_salaire_avant_debut(self):
+        person = single_person(
+            db_status="active",
+            db_pension=20000.0,
+            db_start_age=65,
+            db_normal_age=65,
+            db_indexed=False,
+            salary_growth=0.02,
+            db_active_growth=0.02,
+            retirement_age=65,
+            accounts=AccountsConfig(celi_balance=10000.0),
+            contributions=ContributionsConfig(),
+        )
+        results = run_single(person)
+        p65 = next(r.persons[0] for r in results if r.persons[0].age == 65)
+        assert p65.db_pension == pytest.approx(20000.0 * (1.02 ** 5), rel=0.001)
+
+    def test_pd_ferme_emploi_actif_suit_croissance_salaire(self):
+        active = single_person(
+            db_status="active",
+            db_pension=18000.0,
+            db_start_age=65,
+            db_normal_age=65,
+            db_indexed=False,
+            salary_growth=0.03,
+            retirement_age=65,
+            accounts=AccountsConfig(celi_balance=10000.0),
+            contributions=ContributionsConfig(),
+        )
+        closed = single_person(
+            db_status="closed_salary_linked",
+            db_pension=18000.0,
+            db_start_age=65,
+            db_normal_age=65,
+            db_indexed=False,
+            salary_growth=0.03,
+            retirement_age=65,
+            accounts=AccountsConfig(celi_balance=10000.0),
+            contributions=ContributionsConfig(),
+        )
+        r_active = next(r.persons[0] for r in run_single(active) if r.persons[0].age == 65)
+        r_closed = next(r.persons[0] for r in run_single(closed) if r.persons[0].age == 65)
+        assert r_active.db_pension == pytest.approx(18000.0 * (1.02 ** 5), rel=0.001)
+        assert r_closed.db_pension == pytest.approx(18000.0 * (1.03 ** 5), rel=0.001)
+
+    def test_pd_differe_reste_gele_jusqu_au_debut(self):
+        person = single_person(
+            db_status="deferred", db_pension=18000.0,
+            db_start_age=65, db_normal_age=65, db_indexed=False,
+            salary_growth=0.03, retirement_age=65,
+            accounts=AccountsConfig(celi_balance=10000.0),
+            contributions=ContributionsConfig(),
+        )
+        p65 = next(r.persons[0] for r in run_single(person) if r.persons[0].age == 65)
+        assert p65.db_pension == pytest.approx(18000.0)
+
+    def test_pd_en_paiement_utilise_montant_courant(self):
+        person = single_person(
+            db_status="in_payment", db_pension=18000.0,
+            db_start_age=65, db_normal_age=65, db_indexed=False,
+            retirement_age=60, accounts=AccountsConfig(celi_balance=10000.0),
+            contributions=ContributionsConfig(),
+        )
+        p62 = next(r.persons[0] for r in run_single(person) if r.persons[0].age == 62)
+        assert p62.db_pension == pytest.approx(18000.0)
+
+    def test_cd_desactive_aucun_effet_cri(self):
+        person = single_person(
+            retirement_age=80,
+            accounts=AccountsConfig(cri_balance=0.0, cri_return=0.0),
+            contributions=ContributionsConfig(),
+        )
+        results = run_single(person)
+        p0 = next(r.persons[0] for r in results if r.year == 2026)
+        assert p0.bal_cri == 0.0
+
+    def test_cd_employe_pct_suit_croissance_salaire(self):
+        person = single_person(
+            retirement_age=80,
+            salary=100000.0,
+            salary_growth=0.10,
+            accounts=AccountsConfig(cri_balance=0.0, cri_return=0.0),
+            contributions=ContributionsConfig(dc_employee_pct=0.10),
+        )
+        results = run_single(person)
+        p2026 = next(r.persons[0] for r in results if r.year == 2026)
+        p2027 = next(r.persons[0] for r in results if r.year == 2027)
+        assert p2026.bal_cri == pytest.approx(10000.0, rel=0.001)
+        assert p2027.bal_cri == pytest.approx(21000.0, rel=0.001)
+
+    def test_cd_employeur_fixe_augmente_cri_sans_baisser_cash(self):
+        base = single_person(
+            retirement_age=80,
+            salary=90000.0,
+            accounts=AccountsConfig(cri_balance=0.0, cri_return=0.0),
+            contributions=ContributionsConfig(),
+        )
+        emp = single_person(
+            retirement_age=80,
+            salary=90000.0,
+            accounts=AccountsConfig(cri_balance=0.0, cri_return=0.0),
+            contributions=ContributionsConfig(dc_employer_fixed=5000.0),
+        )
+        r_base = next(r.persons[0] for r in run_single(base) if r.year == 2026)
+        r_emp = next(r.persons[0] for r in run_single(emp) if r.year == 2026)
+        assert r_emp.bal_cri == pytest.approx(r_base.bal_cri + 5000.0, rel=0.001)
+        assert r_emp.net_cash == pytest.approx(r_base.net_cash, rel=0.001)
+
+    def test_cd_employe_fixe_baisse_cash(self):
+        base = single_person(
+            retirement_age=80,
+            salary=90000.0,
+            accounts=AccountsConfig(cri_balance=0.0, cri_return=0.0),
+            contributions=ContributionsConfig(),
+        )
+        emp = single_person(
+            retirement_age=80,
+            salary=90000.0,
+            accounts=AccountsConfig(cri_balance=0.0, cri_return=0.0),
+            contributions=ContributionsConfig(dc_employee_fixed=5000.0),
+        )
+        r_base = next(r.persons[0] for r in run_single(base) if r.year == 2026)
+        r_emp = next(r.persons[0] for r in run_single(emp) if r.year == 2026)
+        assert r_emp.bal_cri == pytest.approx(r_base.bal_cri + 5000.0, rel=0.001)
+        assert r_emp.net_cash == pytest.approx(r_base.net_cash - 5000.0, rel=0.001)
+
+    def test_cd_combinaison_pct_et_fixe(self):
+        person = single_person(
+            retirement_age=80,
+            salary=100000.0,
+            salary_growth=0.0,
+            accounts=AccountsConfig(cri_balance=0.0, cri_return=0.0),
+            contributions=ContributionsConfig(
+                dc_employee_pct=0.05,
+                dc_employee_fixed=2000.0,
+                dc_employer_pct=0.04,
+                dc_employer_fixed=1000.0,
+            ),
+        )
+        p0 = next(r.persons[0] for r in run_single(person) if r.year == 2026)
+        # 5 000 + 2 000 + 4 000 + 1 000
+        assert p0.bal_cri == pytest.approx(12000.0, rel=0.001)
+
+    def test_conversion_cri_frv_inchangee_apres_cotisations_cd(self):
+        person = single_person(
+            birth_year=1955,  # age 71 en 2026
+            retirement_age=80,
+            salary=100000.0,
+            accounts=AccountsConfig(
+                cri_balance=10000.0,
+                cri_return=0.0,
+                frv_balance=0.0,
+                frv_return=0.0,
+            ),
+            contributions=ContributionsConfig(dc_employee_fixed=5000.0),
+        )
+        p0 = next(r.persons[0] for r in run_single(person) if r.year == 2026)
+        # conversion en début d'année (10 000), puis cotisation CD dans le CRI (5 000)
+        assert p0.bal_frv == pytest.approx(10000.0, rel=0.001)
+        assert p0.bal_cri == pytest.approx(5000.0, rel=0.001)
+
 
 class TestCouple:
     def couple(self, **hh_overrides):

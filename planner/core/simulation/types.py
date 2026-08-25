@@ -41,6 +41,11 @@ class ContributionsConfig:
     celiapp_fixed: float = 0.0
     taxable_pct: float = 0.0
     taxable_fixed: float = 0.0
+    # Régime CD vers CRI unique
+    dc_employee_pct: float = 0.0
+    dc_employee_fixed: float = 0.0
+    dc_employer_pct: float = 0.0
+    dc_employer_fixed: float = 0.0
 
 
 @dataclass
@@ -52,11 +57,13 @@ class PersonConfig:
     salary: float = 0.0
     salary_growth: float = 0.02
     # Rente à prestations déterminées
-    db_pension: float = 0.0            # rente annuelle à l'âge normal
+    db_status: str = "active"         # none | active | deferred | closed_salary_linked | in_payment
+    db_pension: float = 0.0            # rente annuelle estimée, en dollars courants
     db_start_age: int = 65
     db_normal_age: int = 65
     db_penalty_per_year: float = 0.06  # réduction par année d'anticipation
     db_indexed: bool = True
+    db_active_growth: float = 0.02     # croissance annuelle: service et salaire
     # Prestations gouvernementales
     rrq_monthly_at_65: float = 0.0
     rrq_start_age: int = 65
@@ -132,6 +139,8 @@ class PersonYearResult:
     contrib_celi: float = 0.0
     contrib_celiapp: float = 0.0
     contrib_taxable: float = 0.0
+    contrib_dc_employee: float = 0.0
+    contrib_dc_employer: float = 0.0
     # Revenus de placement non-enregistrés
     investment_interest: float = 0.0
     investment_dividends: float = 0.0

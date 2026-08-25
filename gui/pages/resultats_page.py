@@ -79,73 +79,88 @@ def _tax_chart(results, estates) -> go.Figure:
     return fig
 
 
-def _year_table(results):
+def _cash_flow_columns():
     columns = [
         {"name": c, "label": l, "field": c, "align": "right"}
         for c, l in [
-            ("year", "Année"), ("ages", "Âges"), ("salary", "Salaires"),
-            ("pensions", "PD+RRQ+SV+SRG"), ("wd", "Retraits"),
-            ("net_cash", "Net encaissé"), ("target", "Cible"),
-            ("gap", "Écart"), ("tax", "Impôts"),
-            ("debt", "Dettes"), ("wealth", "Patrimoine"),
-            ("networth", "Valeur nette"),
+            ("year", "Année"), ("ages", "Âges"),
+            ("salary", "Revenu gagné"), ("db", "Régimes de retraite"),
+            ("rrq", "RPC/RRQ"), ("oas", "SV"), ("minimums", "Minimums"),
+            ("registered", "Enregistré"), ("celi", "CELI"),
+            ("nonreg", "Non enregistré"), ("other", "Autre"),
+            ("debt", "Dette"), ("savings", "Épargne"),
+            ("tax", "Retenues/Impôts"), ("expenses", "Dépenses"),
+            ("shortfall", "Insuffisances"),
         ]]
+    return columns
+
+
+def _minimums(p) -> float:
+    return p.ferr_min + p.frv_min
+
+
+def _registered_withdrawals(p) -> float:
+    return p.wd_reer + max(0.0, p.wd_ferr + p.wd_frv - _minimums(p))
+
+
+def _savings(p) -> float:
+    return (p.contrib_reer + p.contrib_celi + p.contrib_celiapp
+            + p.contrib_taxable + p.contrib_dc_employee + p.contrib_dc_employer)
+
+
+def _flow_values(persons) -> dict:
+    return {
+        "salary": sum(p.salary for p in persons),
+        "db": sum(p.db_pension for p in persons),
+        "rrq": sum(p.rrq for p in persons),
+        "oas": sum(p.oas for p in persons),
+        "minimums": sum(_minimums(p) for p in persons),
+        "registered": sum(_registered_withdrawals(p) for p in persons),
+        "celi": sum(p.wd_celi for p in persons),
+        "nonreg": sum(p.wd_taxable for p in persons),
+        "other": sum(p.gis for p in persons),
+        "savings": sum(_savings(p) for p in persons),
+        "tax": sum(p.tax_total + p.oas_clawback for p in persons),
+    }
+
+
+def _year_table(results):
     rows = []
     for r in results:
         alive = [p for p in r.persons if p.alive]
+        values = _flow_values(alive)
         rows.append({
             "year": r.year,
             "ages": " / ".join(str(p.age) for p in alive),
-            "salary": _fmt(sum(p.salary for p in alive)),
-            "pensions": _fmt(sum(p.db_pension + p.rrq + p.oas + p.gis
-                                 for p in alive)),
-            "wd": _fmt(sum(p.wd_reer + p.wd_ferr + p.wd_frv + p.wd_taxable
-                           + p.wd_celi for p in alive)),
-            "net_cash": _fmt(r.net_cash),
-            "target": _fmt(r.target_net),
-            "gap": _fmt(r.target_gap),
-            "tax": _fmt(r.total_tax),
-            "debt": _fmt(r.debts_balance),
-            "wealth": _fmt(r.total_wealth),
-            "networth": _fmt(r.net_worth),
+            **{key: _fmt(value) for key, value in values.items()},
+            "debt": _fmt(r.debt_service),
+            "expenses": _fmt(max(0.0, r.target_net - r.debt_service)),
+            "shortfall": _fmt(max(0.0, -r.target_gap)),
         })
-    ui.table(columns=columns, rows=rows, pagination=15).classes("w-full") \
-        .props("dense flat bordered")
+    ui.table(columns=_cash_flow_columns(), rows=rows, pagination=False).classes("w-full") \
+        .props("dense flat bordered separator=horizontal")
 
 
 def _person_detail_table(results, person_index: int, name: str):
-    ui.label(f"Détail — {name}").classes("font-bold mt-4")
-    columns = [
-        {"name": c, "label": l, "field": c, "align": "right"}
-        for c, l in [
-            ("year", "Année"), ("age", "Âge"), ("db", "PD"), ("rrq", "RRQ"),
-            ("oas", "SV"), ("gis", "SRG"), ("ferr", "FERR/FRV"),
-            ("reer", "REER"), ("nonreg", "Non-enr."), ("celi", "CELI"),
-            ("split", "Fractionnement"), ("taxable", "Rev. imposable"),
-            ("tax", "Impôt"), ("clawback", "Récup. SV"),
-        ]]
+    ui.label(f"Flux individuel — {name}").classes("font-bold mt-4")
+    ui.label("Les dépenses et dettes communes sont présentées dans la vue familiale.") \
+        .classes("text-sm text-gray-500")
     rows = []
     for r in results:
         p = r.persons[person_index]
         if not p.alive:
             continue
+        values = _flow_values([p])
         rows.append({
-            "year": r.year, "age": p.age,
-            "db": _fmt(p.db_pension), "rrq": _fmt(p.rrq),
-            "oas": _fmt(p.oas), "gis": _fmt(p.gis),
-            "ferr": _fmt(p.wd_ferr + p.wd_frv), "reer": _fmt(p.wd_reer),
-            "nonreg": _fmt(p.wd_taxable), "celi": _fmt(p.wd_celi),
-            "split": _fmt(p.pension_split_received),
-            "taxable": _fmt(p.taxable_income), "tax": _fmt(p.tax_total),
-            "clawback": _fmt(p.oas_clawback),
+            "year": r.year, "ages": str(p.age),
+            **{key: _fmt(value) for key, value in values.items()},
+            "debt": "—", "expenses": "—", "shortfall": "—",
         })
-    ui.table(columns=columns, rows=rows, pagination=15).classes("w-full") \
-        .props("dense flat bordered")
+    ui.table(columns=_cash_flow_columns(), rows=rows, pagination=False).classes("w-full") \
+        .props("dense flat bordered separator=horizontal")
 
 
 def build(state: dict):
-    container = ui.column().classes("w-full gap-4")
-
     async def run_simulation():
         container.clear()
         with container:
@@ -182,14 +197,22 @@ def build(state: dict):
             with ui.row().classes("w-full gap-4 flex-wrap"):
                 ui.plotly(_wealth_chart(results)).classes("w-full lg:w-[48%]")
                 ui.plotly(_tax_chart(results, estates)).classes("w-full lg:w-[48%]")
-            ui.label("Projection annuelle du ménage").classes(
+            ui.label("Projection du flux monétaire brut").classes(
                 "text-lg font-bold mt-2")
-            _year_table(results)
-            for i in range(len(results[0].persons)):
-                _person_detail_table(results, i, state["persons"][i]["name"])
+            with ui.tabs().classes("w-full") as cash_flow_tabs:
+                household_tab = ui.tab("Familial")
+                person_tabs = [ui.tab(state["persons"][i]["name"] or f"Personne {i + 1}")
+                               for i in range(len(results[0].persons))]
+            with ui.tab_panels(cash_flow_tabs, value=household_tab).classes("w-full"):
+                with ui.tab_panel(household_tab):
+                    _year_table(results)
+                for i, person_tab in enumerate(person_tabs):
+                    with ui.tab_panel(person_tab):
+                        _person_detail_table(results, i, state["persons"][i]["name"])
 
     with ui.row().classes("items-center gap-4"):
         ui.button("🚀 Lancer la simulation", on_click=run_simulation) \
             .props("size=lg color=primary")
         ui.label("Simulation complète: impôts réels, fractionnement optimal, "
                  "SRG, dettes et actifs.").classes("text-gray-500")
+    container = ui.column().classes("w-full gap-4")

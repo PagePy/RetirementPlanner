@@ -109,6 +109,37 @@ class HouseholdSimulator:
     def _index(self, amount: float, year: int) -> float:
         return amount * (1 + self.scen.inflation) ** (year - self.start_year)
 
+    def _db_status(self, cfg: PersonConfig) -> str:
+        if cfg.db_status in {"none", "active", "deferred", "closed_salary_linked", "in_payment"}:
+            return cfg.db_status
+        return "active" if cfg.db_pension > 0 else "none"
+
+    def _db_pension_for_year(self, st: _PersonState, year: int, age: int) -> float:
+        cfg = st.cfg
+        status = self._db_status(cfg)
+        if (status == "none" or cfg.db_pension <= 0
+                or (status != "in_payment" and age < cfg.db_start_age)):
+            return 0.0
+
+        start_year_pd = cfg.birth_year + cfg.db_start_age
+        base = cfg.db_pension
+        if status == "in_payment":
+            start_year_pd = self.start_year
+        else:
+            years_to_start = max(0, start_year_pd - self.start_year)
+            if status == "active" and years_to_start:
+                base *= (1 + cfg.db_active_growth) ** years_to_start
+            elif status == "closed_salary_linked" and years_to_start:
+                base *= (1 + cfg.salary_growth) ** years_to_start
+
+        penalty_years = max(0, cfg.db_normal_age - cfg.db_start_age)
+        if status != "in_payment":
+            base *= max(0.0, 1 - penalty_years * cfg.db_penalty_per_year)
+
+        if cfg.db_indexed:
+            return base * (1 + self.scen.inflation) ** max(0, year - start_year_pd)
+        return base
+
     # ---------- boucle principale ----------
     def run(self) -> list[HouseholdYearResult]:
         results = []
@@ -292,12 +323,18 @@ class HouseholdSimulator:
     def _accumulation(self, st: _PersonState, pr: PersonYearResult, year: int) -> None:
         c = st.cfg.contributions
         pr.salary = st.salary
+        # Les % sont appliqués sur le salaire annuel courant de l'année.
+        employee_dc = max(0.0, pr.salary * c.dc_employee_pct + c.dc_employee_fixed)
+        employer_dc = max(0.0, pr.salary * c.dc_employer_pct + c.dc_employer_fixed)
         st.reer.add_new_room(st.salary)
         pr.contrib_reer = st.reer.contribute(st.salary * c.reer_pct + c.reer_fixed)
         pr.contrib_celi = st.celi.contribute(st.salary * c.celi_pct + c.celi_fixed)
         pr.contrib_celiapp = st.celiapp.contribute(c.celiapp_fixed)
         pr.contrib_taxable = st.taxable.contribute(
             st.salary * c.taxable_pct + c.taxable_fixed)
+        pr.contrib_dc_employee = employee_dc
+        pr.contrib_dc_employer = employer_dc
+        st.cri_balance += employee_dc + employer_dc
         st.celiapp.new_year()
         st.salary *= (1 + st.cfg.salary_growth)
         st._tax_situation = {
@@ -307,7 +344,7 @@ class HouseholdSimulator:
             "capital_gains": 0.0,
             "deductions": pr.contrib_reer + pr.contrib_celiapp,
             "cash": pr.salary - pr.contrib_reer - pr.contrib_celi
-                    - pr.contrib_celiapp - pr.contrib_taxable,
+                    - pr.contrib_celiapp - pr.contrib_taxable - employee_dc,
             "oas": 0.0,
         }
 
@@ -315,13 +352,8 @@ class HouseholdSimulator:
     def _guaranteed_income(self, st: _PersonState, pr: PersonYearResult,
                            year: int, age: int) -> None:
         cfg = st.cfg
-        # Rente PD avec pénalité d'anticipation
-        if cfg.db_pension > 0 and age >= cfg.db_start_age:
-            penalty_years = max(0, cfg.db_normal_age - cfg.db_start_age)
-            base = cfg.db_pension * (1 - penalty_years * cfg.db_penalty_per_year)
-            start_year_pd = cfg.birth_year + cfg.db_start_age
-            pr.db_pension = (self._index(base, year) if cfg.db_indexed
-                             else self._index(base, start_year_pd))
+        # Rente PD avec statut, croissance préretraite et pénalité d'anticipation
+        pr.db_pension = self._db_pension_for_year(st, year, age)
         # RRQ (ajustée selon l'âge de début, indexée) + rente de survivant
         if age >= cfg.rrq_start_age and cfg.rrq_monthly_at_65 > 0:
             pr.rrq = self._index(st.rrq_annual_at_start, year)

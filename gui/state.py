@@ -10,12 +10,32 @@ from planner.core.simulation import (
 PROFILES_DIR = Path(__file__).resolve().parents[1] / "profiles"
 
 
+def _coerce_float(value, default: float = 0.0) -> float:
+    return default if value in (None, "") else float(value)
+
+
+def _normalize_db_status(value: str | None, db_pension: float) -> str:
+    if value in {"none", "active", "deferred", "closed_salary_linked", "in_payment"}:
+        return value
+    return "active" if db_pension > 0 else "none"
+
+
+def _normalize_person_state(person: dict) -> None:
+    person.setdefault("db_indexed", True)
+    person["db_pension"] = _coerce_float(person.get("db_pension"))
+    person["db_active_growth"] = _coerce_float(
+        person.get("db_active_growth"), _coerce_float(person.get("salary_growth"), 2.0))
+    person["db_status"] = _normalize_db_status(
+        person.get("db_status"), person["db_pension"])
+
+
 def default_person(name: str = "") -> dict:
     return {
         "name": name, "birth_year": 1970, "retirement_age": 65,
         "life_expectancy": 92, "salary": 70000.0, "salary_growth": 2.0,
+        "db_status": "none",
         "db_pension": 0.0, "db_start_age": 65, "db_normal_age": 65,
-        "db_penalty": 6.0, "db_indexed": True,
+        "db_penalty": 6.0, "db_indexed": True, "db_active_growth": 2.0,
         "rrq_monthly_at_65": 1000.0, "rrq_start_age": 65,
         "oas_start_age": 65, "oas_residence_years": 40,
         "accounts": {
@@ -34,6 +54,8 @@ def default_person(name: str = "") -> dict:
             "celi_pct": 0.0, "celi_fixed": 7000.0,
             "celiapp_fixed": 0.0,
             "taxable_pct": 0.0, "taxable_fixed": 0.0,
+            "dc_employee_pct": 0.0, "dc_employee_fixed": 0.0,
+            "dc_employer_pct": 0.0, "dc_employer_fixed": 0.0,
         },
     }
 
@@ -61,15 +83,18 @@ def default_state() -> dict:
 
 def _person_config(p: dict) -> PersonConfig:
     a, c = p["accounts"], p["contributions"]
+    db_pension = _coerce_float(p.get("db_pension"))
     return PersonConfig(
         name=p["name"], birth_year=int(p["birth_year"]),
         retirement_age=int(p["retirement_age"]),
         life_expectancy=int(p["life_expectancy"]),
         salary=float(p["salary"]), salary_growth=float(p["salary_growth"]) / 100,
-        db_pension=float(p["db_pension"]),
+        db_status=_normalize_db_status(p.get("db_status"), db_pension),
+        db_pension=db_pension,
         db_start_age=int(p["db_start_age"]), db_normal_age=int(p["db_normal_age"]),
         db_penalty_per_year=float(p["db_penalty"]) / 100,
         db_indexed=bool(p.get("db_indexed", True)),
+        db_active_growth=_coerce_float(p.get("db_active_growth")) / 100,
         rrq_monthly_at_65=float(p["rrq_monthly_at_65"]),
         rrq_start_age=int(p["rrq_start_age"]),
         oas_start_age=int(p["oas_start_age"]),
@@ -97,11 +122,17 @@ def _person_config(p: dict) -> PersonConfig:
                                      - float(a["taxable_dividend_ratio"]) / 100),
         ),
         contributions=ContributionsConfig(
-            reer_pct=float(c["reer_pct"]) / 100, reer_fixed=float(c["reer_fixed"]),
-            celi_pct=float(c["celi_pct"]) / 100, celi_fixed=float(c["celi_fixed"]),
-            celiapp_fixed=float(c["celiapp_fixed"]),
-            taxable_pct=float(c["taxable_pct"]) / 100,
-            taxable_fixed=float(c["taxable_fixed"]),
+            reer_pct=_coerce_float(c.get("reer_pct")) / 100,
+            reer_fixed=_coerce_float(c.get("reer_fixed")),
+            celi_pct=_coerce_float(c.get("celi_pct")) / 100,
+            celi_fixed=_coerce_float(c.get("celi_fixed")),
+            celiapp_fixed=_coerce_float(c.get("celiapp_fixed")),
+            taxable_pct=_coerce_float(c.get("taxable_pct")) / 100,
+            taxable_fixed=_coerce_float(c.get("taxable_fixed")),
+            dc_employee_pct=_coerce_float(c.get("dc_employee_pct")) / 100,
+            dc_employee_fixed=_coerce_float(c.get("dc_employee_fixed")),
+            dc_employer_pct=_coerce_float(c.get("dc_employer_pct")) / 100,
+            dc_employer_fixed=_coerce_float(c.get("dc_employer_fixed")),
         ),
     )
 
@@ -154,6 +185,9 @@ def save_profile(state: dict) -> Path:
     PROFILES_DIR.mkdir(exist_ok=True)
     path = PROFILES_DIR / f"{state['profile_name']}.json"
     data = {"format": "v2", **{k: v for k, v in state.items()}}
+    data["persons"] = [dict(person) for person in state["persons"]]
+    for person in data["persons"]:
+        _normalize_person_state(person)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False),
                     encoding="utf-8")
     return path
@@ -170,6 +204,8 @@ def load_profile(name: str) -> dict:
         # compléter les personnes manquantes
         while len(state["persons"]) < 2:
             state["persons"].append(default_person("Personne 2"))
+        for person in state["persons"]:
+            _normalize_person_state(person)
         return state
     return _migrate_legacy(data, name)
 
@@ -201,10 +237,13 @@ def _migrate_legacy(data: dict, name: str) -> dict:
             "rrq_start_age": int(ret.get("rrq_age", 65)),
             "oas_start_age": int(ret.get("oas_age", 65)),
             "db_pension": float(ret.get("rente_pd", 0.0)),
+            "db_status": _normalize_db_status(
+                ret.get("db_status"), float(ret.get("rente_pd", 0.0))),
             "db_start_age": int(ret.get("rente_pd_age_debut", 65)),
             "db_normal_age": int(ret.get("rente_pd_age_normal", 65)),
             "db_penalty": float(ret.get("rente_pd_penalite_annuelle", 6.0)),
         })
+        _normalize_person_state(person)
         person["accounts"].update({
             "reer_balance": float(acc.get("REER_balance", 0.0)),
             "celi_balance": float(acc.get("CELI_balance", 0.0)),
