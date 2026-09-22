@@ -79,20 +79,98 @@ def _tax_chart(results, estates) -> go.Figure:
     return fig
 
 
-def _cash_flow_columns():
+# Soldes de fin d'année exposés dans le tableau (accumulation par compte).
+_BALANCE_FIELDS = [
+    ("bal_reer", "Solde REER"), ("bal_celi", "Solde CELI"),
+    ("bal_celiapp", "Solde CELIAPP"), ("bal_cri", "Solde CRI"),
+    ("bal_ferr", "Solde FERR"), ("bal_frv", "Solde FRV"),
+    ("bal_taxable", "Solde non-enr."),
+]
+
+
+def _active_balance_fields(results) -> list[tuple[str, str]]:
+    """Ne garde que les comptes ayant un solde non nul sur l'horizon."""
+    return [(field, label) for field, label in _BALANCE_FIELDS
+            if any(getattr(p, field) > 1 for r in results for p in r.persons)]
+
+
+# Descriptions affichées en infobulle au survol de chaque en-tête de colonne.
+_COLUMN_TOOLTIPS = {
+    "year": "Année civile de la projection.",
+    "ages": "Âge de chaque personne à la fin de l'année.",
+    "salary": "Revenu d'emploi (salaire) gagné durant l'année.",
+    "db": "Rentes d'employeur à prestations déterminées (régimes PD).",
+    "rrq": "Rente du Régime de rentes du Québec (RRQ / RPC).",
+    "oas": "Pension de la Sécurité de la vieillesse (SV), incluant la récupération.",
+    "minimums": "Retraits MINIMUMS obligatoires du FERR et du FRV, imposés par la loi selon l'âge.",
+    "registered": "Retraits REER + retraits FERR/FRV AU-DELÀ du minimum obligatoire.",
+    "celi": "Retraits du CELI (non imposables), utilisés en dernier recours.",
+    "nonreg": "Retraits du compte non enregistré (imposable sur les gains).",
+    "other": "SRG : Supplément de revenu garanti reçu (prestation non imposable).",
+    "debt": "Paiements de dettes de l'année (service de la dette).",
+    "savings": "Cotisations de l'année durant l'accumulation : REER, CELI, "
+               "CELIAPP, non-enr. et régime CD (incluant la part employeur).",
+    "tax": "Impôts totaux + récupération de la SV pour l'année.",
+    "expenses": "Cible de revenu net du ménage à financer (hors service de dette).",
+    "shortfall": "Portion de la cible que le plan n'arrive PAS à financer.",
+    "total_bal": "Somme de tous les comptes financiers à la fin de l'année.",
+    "bal_ferr": "Solde du FERR (issu d'un REER, retraits flexibles) à la fin de l'année.",
+    "bal_frv": "Solde du FRV (issu d'un CRI immobilisé, retrait plafonné) à la fin de l'année.",
+}
+
+
+def _cash_flow_columns_with_balances(balance_fields):
     columns = [
-        {"name": c, "label": l, "field": c, "align": "right"}
+        {"name": c, "label": l, "field": c, "align": "right",
+         "tooltip": _COLUMN_TOOLTIPS.get(c, "")}
         for c, l in [
             ("year", "Année"), ("ages", "Âges"),
             ("salary", "Revenu gagné"), ("db", "Régimes de retraite"),
-            ("rrq", "RPC/RRQ"), ("oas", "SV"), ("minimums", "Minimums"),
+            ("rrq", "RPC/RRQ"), ("oas", "SV"),
+            ("minimums", "Min. FERR/FRV"),
             ("registered", "Enregistré"), ("celi", "CELI"),
-            ("nonreg", "Non enregistré"), ("other", "Autre"),
+            ("nonreg", "Non enregistré"), ("other", "SRG"),
             ("debt", "Dette"), ("savings", "Épargne"),
             ("tax", "Retenues/Impôts"), ("expenses", "Dépenses"),
             ("shortfall", "Insuffisances"),
         ]]
+    columns += [{"name": field, "label": label, "field": field, "align": "right",
+                 "tooltip": _COLUMN_TOOLTIPS.get(
+                     field, f"Solde du compte {label.replace('Solde ', '')} "
+                            "à la fin de l'année (accumulation).")}
+                for field, label in balance_fields]
+    columns.append({"name": "total_bal", "label": "Total placements",
+                    "field": "total_bal", "align": "right",
+                    "tooltip": _COLUMN_TOOLTIPS["total_bal"]})
     return columns
+
+
+def _balance_values(persons, balance_fields) -> dict:
+    values = {field: sum(getattr(p, field) for p in persons)
+              for field, _ in balance_fields}
+    values["total_bal"] = sum(p.wealth for p in persons)
+    return values
+
+
+# Slot d'en-tête Quasar: infobulle après ~1 s au survol d'un titre de colonne.
+_HEADER_SLOT = '''
+<q-tr :props="props">
+  <q-th v-for="col in props.cols" :key="col.name" :props="props">
+    {{ col.label }}
+    <q-tooltip v-if="col.tooltip" :delay="1000" anchor="bottom middle"
+               self="top middle" max-width="320px" class="text-body2 bg-grey-9">
+      {{ col.tooltip }}
+    </q-tooltip>
+  </q-th>
+</q-tr>
+'''
+
+
+def _cash_flow_table(columns, rows):
+    table = ui.table(columns=columns, rows=rows, pagination=False) \
+        .classes("w-full").props("dense flat bordered separator=horizontal")
+    table.add_slot("header", _HEADER_SLOT)
+    return table
 
 
 def _minimums(p) -> float:
@@ -125,39 +203,43 @@ def _flow_values(persons) -> dict:
 
 
 def _year_table(results):
+    balance_fields = _active_balance_fields(results)
     rows = []
     for r in results:
         alive = [p for p in r.persons if p.alive]
         values = _flow_values(alive)
+        balances = _balance_values(alive, balance_fields)
         rows.append({
             "year": r.year,
             "ages": " / ".join(str(p.age) for p in alive),
             **{key: _fmt(value) for key, value in values.items()},
+            **{key: _fmt(value) for key, value in balances.items()},
             "debt": _fmt(r.debt_service),
             "expenses": _fmt(max(0.0, r.target_net - r.debt_service)),
             "shortfall": _fmt(max(0.0, -r.target_gap)),
         })
-    ui.table(columns=_cash_flow_columns(), rows=rows, pagination=False).classes("w-full") \
-        .props("dense flat bordered separator=horizontal")
+    _cash_flow_table(_cash_flow_columns_with_balances(balance_fields), rows)
 
 
 def _person_detail_table(results, person_index: int, name: str):
     ui.label(f"Flux individuel — {name}").classes("font-bold mt-4")
     ui.label("Les dépenses et dettes communes sont présentées dans la vue familiale.") \
         .classes("text-sm text-gray-500")
+    balance_fields = _active_balance_fields(results)
     rows = []
     for r in results:
         p = r.persons[person_index]
         if not p.alive:
             continue
         values = _flow_values([p])
+        balances = _balance_values([p], balance_fields)
         rows.append({
             "year": r.year, "ages": str(p.age),
             **{key: _fmt(value) for key, value in values.items()},
+            **{key: _fmt(value) for key, value in balances.items()},
             "debt": "—", "expenses": "—", "shortfall": "—",
         })
-    ui.table(columns=_cash_flow_columns(), rows=rows, pagination=False).classes("w-full") \
-        .props("dense flat bordered separator=horizontal")
+    _cash_flow_table(_cash_flow_columns_with_balances(balance_fields), rows)
 
 
 def build(state: dict):
@@ -199,6 +281,35 @@ def build(state: dict):
                 ui.plotly(_tax_chart(results, estates)).classes("w-full lg:w-[48%]")
             ui.label("Projection du flux monétaire brut").classes(
                 "text-lg font-bold mt-2")
+            with ui.expansion("ℹ️ Signification des colonnes").classes("w-full"):
+                ui.markdown(
+                    "- **Min. FERR/FRV** : retraits *minimums obligatoires* du "
+                    "FERR et du FRV (imposés par la loi selon l'âge).\n"
+                    "- **Enregistré** : retraits REER + retraits FERR/FRV "
+                    "*au-delà* du minimum obligatoire.\n"
+                    "- **CELI / Non enregistré** : retraits de ces comptes.\n"
+                    "- **SRG** : Supplément de revenu garanti reçu "
+                    "(prestation non imposable, versée en sus de la cible).\n"
+                    "- **Épargne** : cotisations de l'année (REER, CELI, "
+                    "CELIAPP, non-enr., régime CD) durant l'accumulation.\n"
+                    "- **Colonnes « Solde … »** : valeur de chaque compte à la "
+                    "*fin de l'année* (accumulation), et **Total placements** "
+                    "= somme de tous les comptes financiers.")
+            with ui.expansion("❓ FERR ou FRV : quelle différence ?").classes("w-full"):
+                ui.markdown(
+                    "Les deux sont des comptes de *décaissement* qui imposent un "
+                    "**retrait minimum obligatoire** chaque année (selon l'âge), "
+                    "et tout retrait est **imposable**.\n\n"
+                    "- **FERR** (Fonds enregistré de revenu de retraite) : "
+                    "provient d'un **REER**. Aucun plafond de retrait — vous "
+                    "pouvez en sortir autant que voulu.\n"
+                    "- **FRV** (Fonds de revenu viager) : provient de fonds "
+                    "**immobilisés** d'un régime de retraite d'employeur "
+                    "(via un CRI). Il a un **minimum ET un maximum** annuels, "
+                    "car l'argent est censé durer toute la vie.\n\n"
+                    "En résumé : le **FERR = REER converti** (flexible), le "
+                    "**FRV = CRI converti** (plafonné). La conversion se fait au "
+                    "plus tard à **71 ans**.")
             with ui.tabs().classes("w-full") as cash_flow_tabs:
                 household_tab = ui.tab("Familial")
                 person_tabs = [ui.tab(state["persons"][i]["name"] or f"Personne {i + 1}")

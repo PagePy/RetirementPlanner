@@ -43,6 +43,27 @@ def build_app():
     ui.add_head_html(f"<script>window.addEventListener('load', () => {{"
                      f"{DRAGGABLE_DIALOGS_JS}}});</script>")
 
+    @ui.refreshable
+    def render_pages():
+        with ui.tabs().classes("w-full") as tabs:
+            tab_profil = ui.tab("👤 Profil & Comptes")
+            tab_patrimoine = ui.tab("🏠 Actifs & Dettes")
+            tab_resultats = ui.tab("📈 Résultats")
+            tab_analyses = ui.tab("🔬 Analyses")
+            tab_outils = ui.tab("🎯 Outils")
+
+        with ui.tab_panels(tabs, value=tab_profil).classes("w-full"):
+            with ui.tab_panel(tab_profil):
+                profile_page.build(app_state)
+            with ui.tab_panel(tab_patrimoine):
+                patrimoine_page.build(app_state)
+            with ui.tab_panel(tab_resultats):
+                resultats_page.build(app_state)
+            with ui.tab_panel(tab_analyses):
+                analyses_page.build(app_state)
+            with ui.tab_panel(tab_outils):
+                outils_page.build(app_state)
+
     with ui.header().classes("bg-primary items-center"):
         ui.label("🏖️ Planificateur de retraite").classes("text-xl font-bold")
         ui.space()
@@ -69,10 +90,9 @@ def build_app():
                         app_state.clear()
                         app_state.update(loaded)
                         dialog.close()
-                        ui.notify(f"Profil «{name}» chargé — rechargez la page "
-                                  "pour rafraîchir les formulaires",
+                        render_pages.refresh()
+                        ui.notify(f"Profil «{name}» chargé",
                                   type="positive")
-                        ui.navigate.reload()
                     except Exception as exc:
                         ui.notify(f"Erreur: {exc}", type="negative")
 
@@ -86,24 +106,7 @@ def build_app():
         ui.button("💾 Sauvegarder", on_click=do_save).props("flat color=white")
         ui.button("📂 Charger", on_click=open_load_dialog).props("flat color=white")
 
-    with ui.tabs().classes("w-full") as tabs:
-        tab_profil = ui.tab("👤 Profil & Comptes")
-        tab_patrimoine = ui.tab("🏠 Actifs & Dettes")
-        tab_resultats = ui.tab("📈 Résultats")
-        tab_analyses = ui.tab("🔬 Analyses")
-        tab_outils = ui.tab("🎯 Outils")
-
-    with ui.tab_panels(tabs, value=tab_profil).classes("w-full"):
-        with ui.tab_panel(tab_profil):
-            profile_page.build(app_state)
-        with ui.tab_panel(tab_patrimoine):
-            patrimoine_page.build(app_state)
-        with ui.tab_panel(tab_resultats):
-            resultats_page.build(app_state)
-        with ui.tab_panel(tab_analyses):
-            analyses_page.build(app_state)
-        with ui.tab_panel(tab_outils):
-            outils_page.build(app_state)
+    render_pages()
 
 
 def run_app(native: bool = False, port: int = 8090):

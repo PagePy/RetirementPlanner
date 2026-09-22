@@ -3,7 +3,7 @@ import pytest
 
 from planner.core.goals import (
     plan_succeeds, required_annual_savings, achievable_retirement_age,
-    sustainable_income, optimal_benefit_ages,
+    sustainable_income, financial_capacity, optimal_benefit_ages,
     ProfileAnswers, suggest_plan)
 from planner.core.projects import (
     compare_down_payment_strategies, retirement_cost_of_project)
@@ -70,6 +70,15 @@ class TestSolvers:
         assert plan_succeeds(HouseholdSimulator(
             HouseholdConfig(persons=[person()], target_net_income=income * 0.98),
             SCEN).run())
+
+    def test_capacite_financiere_epuise_les_placements(self):
+        capacity = financial_capacity(hh(), SCEN)
+        results = HouseholdSimulator(
+            hh(target=capacity.annual_income), SCEN).run()
+        assert capacity.monthly_income == capacity.annual_income / 12
+        assert capacity.final_wealth < 500.0
+        assert capacity.end_year == results[-1].year
+        assert plan_succeeds(results, tolerance=1.0)
 
     def test_ages_optimaux_rrq_sv(self):
         options = optimal_benefit_ages(hh(target=45000.0), SCEN,

@@ -13,6 +13,44 @@ def _fmt(x: float) -> str:
 def build(state: dict):
     with ui.column().classes("w-full gap-4"):
 
+        # ==================== CAPACITÉ FINANCIÈRE ====================
+        with ui.card().classes("w-full"):
+            ui.label("Capacité financière").classes(
+                "text-lg font-bold text-primary")
+            ui.label(
+                "Estime la dépense mensuelle nette qui épuise vos placements "
+                "à la fin de votre horizon de retraite.").classes(
+                    "text-gray-500 text-sm")
+            capacity_area = ui.column().classes("w-full")
+
+            async def do_capacity():
+                capacity_area.clear()
+                with capacity_area:
+                    ui.spinner()
+                    ui.label("Calcul de la capacité financière...")
+                hh, scen = to_configs(state)
+                capacity = await run.cpu_bound(
+                    compute.calculate_financial_capacity, hh, scen)
+                capacity_area.clear()
+                with capacity_area:
+                    ui.label(
+                        f"{_fmt(capacity.monthly_income)} / mois").classes(
+                            "text-3xl font-bold text-positive")
+                    ui.label(
+                        f"{_fmt(capacity.annual_income)} par année, en dollars "
+                        "d'aujourd'hui et indexé selon votre scénario.").classes(
+                            "text-gray-600")
+                    ui.label(
+                        f"Patrimoine financier projeté en {capacity.end_year}: "
+                        f"{_fmt(capacity.final_wealth)}").classes(
+                            "text-sm text-gray-500")
+                    ui.label(
+                        "Les actifs immobiliers sont exclus, sauf si une vente "
+                        "est déjà planifiée dans le profil.").classes(
+                            "text-xs text-gray-500")
+
+            ui.button("Calculer ma capacité", on_click=do_capacity)
+
         # ==================== TESTS DE STRESS ====================
         with ui.card().classes("w-full"):
             ui.label("🌪️ Tests de stress").classes("text-lg font-bold text-primary")

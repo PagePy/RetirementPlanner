@@ -3,7 +3,7 @@ from planner.core.analysis import (
     estate_timeline, run_all_stress_tests, run_monte_carlo, compare_strategies)
 from planner.core.goals import (
     required_annual_savings, achievable_retirement_age,
-    sustainable_income, optimal_benefit_ages)
+    sustainable_income, financial_capacity, optimal_benefit_ages)
 from planner.core.projects import (
     compare_down_payment_strategies, retirement_cost_of_project)
 from planner.core.simulation import HouseholdSimulator
@@ -30,6 +30,10 @@ def stress_battery(hh, scen):
 
 def strategy_comparison(hh, scen):
     return compare_strategies(hh, scen)
+
+
+def calculate_financial_capacity(hh, scen):
+    return financial_capacity(hh, scen)
 
 
 def solve_goals(hh, scen):

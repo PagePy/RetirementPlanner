@@ -92,6 +92,42 @@ def sustainable_income(hh: HouseholdConfig, scen: ScenarioConfig,
 
 
 @dataclass
+class FinancialCapacity:
+    annual_income: float
+    monthly_income: float
+    final_wealth: float
+    end_year: int
+
+
+def financial_capacity(hh: HouseholdConfig, scen: ScenarioConfig,
+                       max_income: float = 1000000.0,
+                       precision: float = 120.0) -> FinancialCapacity:
+    """Dépense nette maximale permettant d'épuiser le patrimoine financier.
+
+    Le montant est exprimé en dollars d'aujourd'hui et suit l'indexation de la
+    cible du ménage. La recherche conserve la cible la plus élevée atteinte
+    chaque année de retraite, ce qui amène les comptes près de zéro à l'horizon.
+    """
+    lo, hi = 0.0, max_income
+    while hi - lo > precision:
+        mid = (lo + hi) / 2
+        if plan_succeeds(
+                _run(replace(hh, target_net_income=mid), scen), tolerance=1.0):
+            lo = mid
+        else:
+            hi = mid
+
+    results = _run(replace(hh, target_net_income=lo), scen)
+    final_result = results[-1]
+    return FinancialCapacity(
+        annual_income=lo,
+        monthly_income=lo / 12,
+        final_wealth=final_result.total_wealth,
+        end_year=final_result.year,
+    )
+
+
+@dataclass
 class BenefitAgeOption:
     rrq_age: int
     oas_age: int
