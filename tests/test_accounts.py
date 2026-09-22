@@ -2,6 +2,7 @@
 import pytest
 
 from planner.core.accounts import REER, RAP, CELI, CELIAPP, FERR, FRV, Taxable, rrif_min_factor
+from planner.core.accounts.celi import annual_limit as tfsa_annual_limit
 
 
 # ==================== REER ====================
@@ -92,6 +93,19 @@ class TestCELI:
     def test_cotisation_limitee(self):
         c = CELI(contribution_room=5000.0, year=2025)
         assert c.contribute(8000.0) == pytest.approx(5000.0)
+
+    def test_plafond_publie_non_indexe(self):
+        assert tfsa_annual_limit(2026, inflation=0.02) == pytest.approx(7000.0)
+
+    def test_plafond_futur_indexe_arrondi_500(self):
+        # 7000 * 1.02^3 = 7428.46 -> 7500; 7000 * 1.02 = 7140 -> 7000
+        assert tfsa_annual_limit(2029, inflation=0.02) == pytest.approx(7500.0)
+        assert tfsa_annual_limit(2027, inflation=0.02) == pytest.approx(7000.0)
+
+    def test_nouveaux_droits_indexes(self):
+        c = CELI(contribution_room=0.0, year=2026, inflation=0.02)
+        c.new_year(2029)
+        assert c.contribution_room == pytest.approx(7500.0)
 
 
 # ==================== CELIAPP ====================

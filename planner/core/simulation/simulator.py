@@ -78,7 +78,7 @@ class HouseholdSimulator:
         st.reer = REER(balance=a.reer_balance, contribution_room=a.reer_room,
                        year=self.start_year)
         st.celi = CELI(balance=a.celi_balance, contribution_room=a.celi_room,
-                       year=self.start_year)
+                       year=self.start_year, inflation=self.scen.inflation)
         st.celiapp = CELIAPP(balance=a.celiapp_balance, year_opened=self.start_year)
         st.cri_balance = a.cri_balance
         spouse_offset = self._spouse_age_offset(cfg)
@@ -165,8 +165,9 @@ class HouseholdSimulator:
             retired = age >= st.cfg.retirement_age
             pr.retired = retired
 
-            # Droits et conversions
-            st.celi.new_year(year)
+            # Droits et conversions (celi_room saisi inclut déjà l'année de départ)
+            if year > self.start_year:
+                st.celi.new_year(year)
             if age >= 71 and st.reer.balance > 0:
                 st.ferr.balance += st.reer.convert_to_ferr()
             if st.cri_balance > 0 and (age >= 71 or (retired and age >= 55)):
@@ -328,10 +329,14 @@ class HouseholdSimulator:
         employer_dc = max(0.0, pr.salary * c.dc_employer_pct + c.dc_employer_fixed)
         st.reer.add_new_room(st.salary)
         pr.contrib_reer = st.reer.contribute(st.salary * c.reer_pct + c.reer_fixed)
-        pr.contrib_celi = st.celi.contribute(st.salary * c.celi_pct + c.celi_fixed)
+        celi_fixed = self._index(c.celi_fixed, year) if c.celi_fixed_indexed else c.celi_fixed
+        celi_requested = max(0.0, st.salary * c.celi_pct + celi_fixed)
+        pr.contrib_celi = st.celi.contribute(celi_requested)
+        celi_overflow = (celi_requested - pr.contrib_celi
+                         if c.celi_overflow_to_taxable else 0.0)
         pr.contrib_celiapp = st.celiapp.contribute(c.celiapp_fixed)
         pr.contrib_taxable = st.taxable.contribute(
-            st.salary * c.taxable_pct + c.taxable_fixed)
+            st.salary * c.taxable_pct + c.taxable_fixed + celi_overflow)
         pr.contrib_dc_employee = employee_dc
         pr.contrib_dc_employer = employer_dc
         st.cri_balance += employee_dc + employer_dc

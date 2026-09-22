@@ -22,6 +22,9 @@ def _normalize_db_status(value: str | None, db_pension: float) -> str:
 
 def _normalize_person_state(person: dict) -> None:
     person.setdefault("db_indexed", True)
+    contributions = person.setdefault("contributions", {})
+    contributions.setdefault("celi_fixed_indexed", False)
+    contributions.setdefault("celi_overflow_to_taxable", True)
     person["db_pension"] = _coerce_float(person.get("db_pension"))
     person["db_active_growth"] = _coerce_float(
         person.get("db_active_growth"), _coerce_float(person.get("salary_growth"), 2.0))
@@ -52,6 +55,7 @@ def default_person(name: str = "") -> dict:
         "contributions": {
             "reer_pct": 10.0, "reer_fixed": 0.0,
             "celi_pct": 0.0, "celi_fixed": 7000.0,
+            "celi_fixed_indexed": False, "celi_overflow_to_taxable": True,
             "celiapp_fixed": 0.0,
             "taxable_pct": 0.0, "taxable_fixed": 0.0,
             "dc_employee_pct": 0.0, "dc_employee_fixed": 0.0,
@@ -64,6 +68,7 @@ def default_state() -> dict:
     return {
         "profile_name": "MonProfil",
         "is_couple": False,
+        "persons_side_by_side": False,
         "province": "QC",
         "target_net_income": 60000.0,
         "target_indexed": True,
@@ -126,6 +131,8 @@ def _person_config(p: dict) -> PersonConfig:
             reer_fixed=_coerce_float(c.get("reer_fixed")),
             celi_pct=_coerce_float(c.get("celi_pct")) / 100,
             celi_fixed=_coerce_float(c.get("celi_fixed")),
+            celi_fixed_indexed=bool(c.get("celi_fixed_indexed", False)),
+            celi_overflow_to_taxable=bool(c.get("celi_overflow_to_taxable", True)),
             celiapp_fixed=_coerce_float(c.get("celiapp_fixed")),
             taxable_pct=_coerce_float(c.get("taxable_pct")) / 100,
             taxable_fixed=_coerce_float(c.get("taxable_fixed")),

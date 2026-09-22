@@ -1,13 +1,25 @@
 """CELI avec droits de cotisation réels.
 
 Règles:
-- Nouveaux droits chaque année (plafond annuel indexé).
+- Nouveaux droits chaque année (plafond annuel indexé, arrondi au 500 $).
 - Les retraits restaurent les droits... mais seulement le 1er janvier SUIVANT.
 - Retraits et croissance non imposables.
 """
+import math
 from dataclasses import dataclass, field
 
 from planner.core.accounts.params import load_account_params
+
+
+def annual_limit(year: int, inflation: float = 0.0) -> float:
+    """Plafond officiel si publié, sinon dernier plafond connu indexé et arrondi au 500 $."""
+    params = load_account_params(year)
+    limit = params["tfsa"]["annual_limit"]
+    years_after = year - params["_effective_year"]
+    if years_after <= 0:
+        return float(limit)
+    raw = limit * (1 + inflation) ** years_after
+    return float(math.floor(raw / 500 + 0.5) * 500)
 
 
 @dataclass
@@ -15,6 +27,7 @@ class CELI:
     balance: float = 0.0
     contribution_room: float = 0.0
     year: int = 2025
+    inflation: float = 0.0
     _pending_room_restore: float = field(default=0.0, repr=False)
 
     def __post_init__(self):
@@ -22,8 +35,8 @@ class CELI:
 
     def new_year(self, year: int) -> None:
         """1er janvier: nouveaux droits + restauration des retraits de l'an passé."""
-        params = load_account_params(year)["tfsa"]
-        self.contribution_room += params["annual_limit"] + self._pending_room_restore
+        self.contribution_room += (annual_limit(year, self.inflation)
+                                   + self._pending_room_restore)
         self._pending_room_restore = 0.0
 
     def contribute(self, amount: float) -> float:

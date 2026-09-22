@@ -38,6 +38,8 @@ class ContributionsConfig:
     reer_fixed: float = 0.0
     celi_pct: float = 0.0
     celi_fixed: float = 0.0
+    celi_fixed_indexed: bool = False    # montant fixe CELI indexé à l'inflation
+    celi_overflow_to_taxable: bool = True  # excédent sur les droits -> non-enregistré
     celiapp_fixed: float = 0.0
     taxable_pct: float = 0.0
     taxable_fixed: float = 0.0

@@ -279,6 +279,40 @@ class TestSingle:
         assert p0.bal_cri == pytest.approx(5000.0, rel=0.001)
 
 
+class TestCotisationsCELI:
+    @staticmethod
+    def _worker(**contrib) -> PersonConfig:
+        return single_person(
+            birth_year=1990, retirement_age=65,
+            accounts=AccountsConfig(celi_room=10000.0),
+            contributions=ContributionsConfig(**contrib))
+
+    def _by_year(self, person):
+        return {r.year: r.persons[0] for r in run_single(person)}
+
+    def test_droits_saisis_non_doubles_annee_depart(self):
+        by_year = self._by_year(self._worker(celi_fixed=20000.0,
+                                             celi_overflow_to_taxable=False))
+        assert by_year[2026].contrib_celi == pytest.approx(10000.0)
+        assert by_year[2027].contrib_celi == pytest.approx(7000.0)
+
+    def test_excedent_vers_non_enregistre(self):
+        by_year = self._by_year(self._worker(celi_fixed=12000.0))
+        assert by_year[2026].contrib_celi == pytest.approx(10000.0)
+        assert by_year[2026].contrib_taxable == pytest.approx(2000.0)
+
+    def test_excedent_non_redirige_si_option_desactivee(self):
+        by_year = self._by_year(self._worker(celi_fixed=12000.0,
+                                             celi_overflow_to_taxable=False))
+        assert by_year[2026].contrib_taxable == 0.0
+
+    def test_montant_fixe_indexe(self):
+        by_year = self._by_year(self._worker(celi_fixed=5000.0,
+                                             celi_fixed_indexed=True))
+        assert by_year[2026].contrib_celi == pytest.approx(5000.0)
+        assert by_year[2028].contrib_celi == pytest.approx(5000.0 * 1.02 ** 2)
+
+
 class TestCouple:
     def couple(self, **hh_overrides):
         p1 = single_person(name="P1", birth_year=1964,

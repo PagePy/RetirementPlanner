@@ -23,6 +23,10 @@ def _pct(container_dict: dict, key: str, label: str, **kwargs):
         container_dict, key).props("dense outlined").classes("w-36")
 
 
+def _account_label(label: str):
+    ui.label(label).classes("w-36 font-medium text-grey-8")
+
+
 @contextmanager
 def _section(title: str, icon: str):
     """Bloc de sous-section avec en-tête à icône."""
@@ -61,6 +65,73 @@ def _person_form(p: dict, title: str):
                 _num(p, "oas_start_age", "Début SV (65-70)")
                 _num(p, "oas_residence_years", "Années résidence Canada")
 
+        a = p["accounts"]
+        with _section("Comptes — soldes et rendements", "savings"):
+            ui.label("Un compte par ligne : solde, rendement attendu et droits disponibles.") \
+                .classes("text-sm text-grey-6")
+            with ui.row().classes("gap-4 flex-wrap items-center"):
+                _account_label("REER")
+                _num(a, "reer_balance", "Solde ($)")
+                _pct(a, "reer_return", "Rendement")
+                _num(a, "reer_room", "Droits disponibles ($)")
+            with ui.row().classes("gap-4 flex-wrap items-center"):
+                _account_label("CELI")
+                _num(a, "celi_balance", "Solde ($)")
+                _pct(a, "celi_return", "Rendement")
+                _num(a, "celi_room", "Droits disponibles ($)") \
+                    .tooltip("Droits au 1er janvier de l'année de départ, incluant "
+                             "le plafond de cette année (valeur de Mon dossier ARC).")
+            with ui.row().classes("gap-4 flex-wrap items-center"):
+                _account_label("CELIAPP")
+                _num(a, "celiapp_balance", "Solde ($)")
+                _pct(a, "celiapp_return", "Rendement")
+            with ui.row().classes("gap-4 flex-wrap items-center"):
+                _account_label("CRI (immobilisé)")
+                _num(a, "cri_balance", "Solde ($)")
+                _pct(a, "cri_return", "Rendement")
+            with ui.row().classes("gap-4 flex-wrap items-center"):
+                _account_label("FERR")
+                _num(a, "ferr_balance", "Solde ($)")
+                _pct(a, "ferr_return", "Rendement")
+            with ui.row().classes("gap-4 flex-wrap items-center"):
+                _account_label("FRV")
+                _num(a, "frv_balance", "Solde ($)")
+                _pct(a, "frv_return", "Rendement")
+            with ui.row().classes("gap-4 flex-wrap items-center"):
+                _account_label("Non-enregistré")
+                _num(a, "taxable_balance", "Solde ($)")
+                _pct(a, "taxable_return", "Rendement")
+                _num(a, "taxable_acb", "PBR ($, vide = solde)")
+            with ui.row().classes("gap-4 flex-wrap items-center pl-40"):
+                _pct(a, "taxable_interest_ratio", "Part intérêts")
+                _pct(a, "taxable_dividend_ratio", "Part dividendes")
+
+        c = p["contributions"]
+        with _section("Cotisations annuelles (accumulation)", "trending_up"):
+            ui.label("Les montants fixes s'ajoutent aux cotisations calculées en pourcentage du salaire.") \
+                .classes("text-sm text-grey-6")
+            with ui.row().classes("gap-4 flex-wrap items-center"):
+                _account_label("REER")
+                _pct(c, "reer_pct", "% salaire")
+                _num(c, "reer_fixed", "Montant fixe ($)")
+            with ui.row().classes("gap-4 flex-wrap items-center"):
+                _account_label("CELI")
+                _pct(c, "celi_pct", "% salaire")
+                _num(c, "celi_fixed", "Montant fixe ($)")
+                ui.checkbox("Indexer le montant fixe").bind_value(c, "celi_fixed_indexed") \
+                    .tooltip("Le montant fixe augmente chaque année selon l'inflation.")
+                ui.checkbox("Excédent vers non-enregistré") \
+                    .bind_value(c, "celi_overflow_to_taxable") \
+                    .tooltip("La part qui dépasse les droits CELI est investie dans le "
+                             "compte non-enregistré au lieu d'être dépensée.")
+            with ui.row().classes("gap-4 flex-wrap items-center"):
+                _account_label("CELIAPP")
+                _num(c, "celiapp_fixed", "Montant fixe ($)")
+            with ui.row().classes("gap-4 flex-wrap items-center"):
+                _account_label("Non-enregistré")
+                _pct(c, "taxable_pct", "% salaire")
+                _num(c, "taxable_fixed", "Montant fixe ($)")
+
         with _section("Rente d'employeur (PD)", "work"):
             ui.select(DB_STATUS_LABELS, label="Statut du régime PD") \
                 .bind_value(p, "db_status").props("dense outlined").classes("w-72") \
@@ -92,39 +163,6 @@ def _person_form(p: dict, title: str):
                 ui.checkbox("Rente indexée une fois en paiement") \
                     .bind_value(p, "db_indexed")
 
-        a = p["accounts"]
-        with _section("Comptes — soldes et rendements", "savings"):
-            with ui.row().classes("gap-4 flex-wrap"):
-                _num(a, "reer_balance", "REER ($)")
-                _pct(a, "reer_return", "Rend. REER")
-                _num(a, "reer_room", "Droits REER ($)")
-                _num(a, "celi_balance", "CELI ($)")
-                _pct(a, "celi_return", "Rend. CELI")
-                _num(a, "celi_room", "Droits CELI ($)")
-            with ui.row().classes("gap-4 flex-wrap"):
-                _num(a, "celiapp_balance", "CELIAPP ($)")
-                _num(a, "cri_balance", "CRI ($)")
-                _num(a, "ferr_balance", "FERR ($)")
-                _num(a, "frv_balance", "FRV ($)")
-            with ui.row().classes("gap-4 flex-wrap"):
-                _num(a, "taxable_balance", "Non-enregistré ($)")
-                _num(a, "taxable_acb", "PBR non-enr. ($, vide = solde)")
-                _pct(a, "taxable_return", "Rend. non-enr.")
-                _pct(a, "taxable_interest_ratio", "Part intérêts")
-                _pct(a, "taxable_dividend_ratio", "Part dividendes")
-
-        c = p["contributions"]
-        with _section("Cotisations annuelles (accumulation)", "trending_up"):
-            with ui.row().classes("gap-4 flex-wrap"):
-                _pct(c, "reer_pct", "REER % salaire")
-                _num(c, "reer_fixed", "REER fixe ($)")
-                _pct(c, "celi_pct", "CELI % salaire")
-                _num(c, "celi_fixed", "CELI fixe ($)")
-                _num(c, "celiapp_fixed", "CELIAPP fixe ($)")
-                _num(c, "taxable_fixed", "Non-enr. fixe ($)")
-            with ui.row().classes("gap-4 flex-wrap"):
-                _pct(c, "taxable_pct", "Non-enr. % salaire")
-
         with _section("Régime CD (alimente le CRI unique)", "domain"):
             ui.label("Les cotisations en % sont recalculées chaque année sur le "
                      "salaire annuel courant.") \
@@ -137,6 +175,16 @@ def _person_form(p: dict, title: str):
 
 
 def build(state: dict):
+    state.setdefault("persons_side_by_side", False)
+    persons_box = None
+
+    def apply_layout():
+        if persons_box is None:
+            return
+        side = state["is_couple"] and state["persons_side_by_side"]
+        persons_box.classes(replace="w-full grid gap-4 items-start " + (
+            "grid-cols-2" if side else "grid-cols-1"))
+
     with ui.column().classes("w-full gap-4"):
         with ui.card().classes("w-full shadow-md rounded-borders"):
             with ui.row().classes(
@@ -145,7 +193,14 @@ def build(state: dict):
                 ui.icon("diversity_3").classes("text-2xl")
                 ui.label("Ménage et objectif").classes("text-lg font-bold")
             with ui.row().classes("gap-6 items-center flex-wrap"):
-                ui.switch("Couple").bind_value(state, "is_couple")
+                ui.switch("Couple", on_change=lambda _: apply_layout()) \
+                    .bind_value(state, "is_couple")
+                ui.toggle({False: "L'une sous l'autre", True: "Côte à côte"},
+                          on_change=lambda _: apply_layout()) \
+                    .bind_value(state, "persons_side_by_side") \
+                    .bind_visibility_from(state, "is_couple") \
+                    .props("dense no-caps") \
+                    .tooltip("Disposition des fiches Personne 1 et Personne 2")
                 ui.select(["QC"], label="Province").bind_value(
                     state, "province").props("dense outlined").classes("w-28")
                 ui.number("Revenu net cible du ménage ($/an)", format="%.0f") \
@@ -172,6 +227,10 @@ def build(state: dict):
                         "moins de récupération de la SV. Choix irrévocable fait "
                         "à l'ouverture du FERR ; aucun effet sans conjoint plus jeune.")
 
-        _person_form(state["persons"][0], "Personne 1")
-        with ui.column().classes("w-full").bind_visibility_from(state, "is_couple"):
-            _person_form(state["persons"][1], "Personne 2")
+        with ui.element("div") as persons_box:
+            with ui.column().classes("w-full min-w-0"):
+                _person_form(state["persons"][0], "Personne 1")
+            with ui.column().classes("w-full min-w-0") \
+                    .bind_visibility_from(state, "is_couple"):
+                _person_form(state["persons"][1], "Personne 2")
+        apply_layout()
