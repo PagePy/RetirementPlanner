@@ -33,3 +33,5 @@ htmlcov/
 # Generated simulation outputs
 scenario_results.csv
 scenario_results.json
+# VS Code
+.vscode/

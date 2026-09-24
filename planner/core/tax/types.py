@@ -29,6 +29,12 @@ class TaxInput:
     # Revenu familial net (pour la réduction des crédits QC des aînés).
     # Si None, le revenu net individuel est utilisé.
     family_net_income: float | None = None
+    # Frais médicaux admissibles payés dans l'année (crédit au-delà de 3% du revenu).
+    medical_expenses: float = 0.0
+    # Dons de bienfaisance de l'année.
+    donations: float = 0.0
+    # Dépenses de maintien à domicile (crédit remboursable QC, 70 ans+).
+    home_support_expenses: float = 0.0
 
 
 @dataclass
@@ -38,6 +44,7 @@ class LevelTaxResult:
     non_refundable_credits: float = 0.0
     dividend_credits: float = 0.0
     abatement: float = 0.0
+    refundable_credits: float = 0.0  # versés même sans impôt à payer
     net_tax: float = 0.0
     credits_detail: dict = field(default_factory=dict)
 
@@ -53,6 +60,7 @@ class TaxResult:
     federal: LevelTaxResult = field(default_factory=LevelTaxResult)
     provincial: LevelTaxResult = field(default_factory=LevelTaxResult)
     total_tax: float = 0.0
-    after_tax_income: float = 0.0    # liquidités reçues - impôt total
+    refundable_credits: float = 0.0  # somme des crédits remboursables (liquidités)
+    after_tax_income: float = 0.0    # liquidités reçues - impôt total + remboursables
     average_rate: float = 0.0        # impôt / revenu imposable
     marginal_rate: float = 0.0       # sur 100$ de revenu ordinaire additionnel

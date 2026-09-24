@@ -26,9 +26,7 @@ def rrif_min_factor(age: int) -> float:
     if str(age) in table:
         return table[str(age)]
     # Avant 71 ans: 1/(90 - âge)
-    if age >= 90:
-        return table[str(cap_age)]
-    return 1.0 / (90 - age) if age < 90 else table[str(cap_age)]
+    return 1.0 / (90 - age)
 
 
 @dataclass

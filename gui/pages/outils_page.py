@@ -1,5 +1,6 @@
 """Page Outils — solveurs d'objectifs, plan suggéré, projets de vie."""
 from nicegui import ui, run
+import plotly.graph_objects as go
 
 from gui import compute
 from gui.state import to_configs
@@ -79,6 +80,37 @@ def build(state: dict):
                              "tax": _fmt(o.lifetime_tax)} for o in options]
                     ui.table(columns=columns, rows=rows, pagination=9) \
                         .classes("w-full").props("dense flat bordered")
+                    # Point mort en dollars constants
+                    p = state["persons"][0]
+                    bes = compute.breakevens(float(p["rrq_monthly_at_65"]),
+                                             int(state["start_year"]),
+                                             int(p.get("oas_residence_years") or 40))
+                    ui.label("Point mort du report (dollars constants, sans rendement)") \
+                        .classes("font-bold mt-4")
+                    be_rows = [{
+                        "b": f"{b.benefit} {b.early_age} vs {b.late_age} ans",
+                        "early": _fmt(b.early_annual), "late": _fmt(b.late_annual),
+                        "be": (f"{b.breakeven_age} ans" if b.breakeven_age
+                               else "jamais avant 100 ans")} for b in bes]
+                    ui.table(columns=[
+                        {"name": "b", "label": "Comparaison", "field": "b", "align": "left"},
+                        {"name": "early", "label": "Rente hâtive", "field": "early"},
+                        {"name": "late", "label": "Rente reportée", "field": "late"},
+                        {"name": "be", "label": "Report rentable à partir de", "field": "be"},
+                    ], rows=be_rows).classes("w-full").props("dense flat bordered")
+                    fig = go.Figure()
+                    for b in bes:
+                        if b.benefit != "RRQ" or (b.early_age, b.late_age) != (60, 70):
+                            continue
+                        ages = list(range(b.early_age, b.early_age + len(b.cumulative_early)))
+                        fig.add_trace(go.Scatter(name=f"RRQ dès {b.early_age} ans", x=ages,
+                                                 y=b.cumulative_early, mode="lines"))
+                        fig.add_trace(go.Scatter(name=f"RRQ dès {b.late_age} ans", x=ages,
+                                                 y=b.cumulative_late, mode="lines"))
+                    if fig.data:
+                        fig.update_layout(title="Cumul des rentes RRQ reçues selon l'âge de début",
+                                          height=360, margin=dict(l=40, r=20, t=50, b=40))
+                        ui.plotly(fig).classes("w-full")
             ui.button("Comparer les âges RRQ/SV", on_click=do_ages)
 
         # ==================== PLAN SUGGÉRÉ ====================

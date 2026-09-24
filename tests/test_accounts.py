@@ -3,6 +3,26 @@ import pytest
 
 from planner.core.accounts import REER, RAP, CELI, CELIAPP, FERR, FRV, Taxable, rrif_min_factor
 from planner.core.accounts.celi import annual_limit as tfsa_annual_limit
+from planner.core.accounts.celi import cumulative_room as tfsa_cumulative_room
+
+
+class TestDroitsCELICumules:
+    def test_cumul_officiel_2025(self):
+        assert tfsa_cumulative_room(1970, 2025) == 102000.0
+
+    def test_cumul_2026(self):
+        assert tfsa_cumulative_room(1970, 2026) == 109000.0
+
+    def test_commence_a_18_ans(self):
+        # Né en 2005 → 18 ans en 2023: 6 500 + 7 000 + 7 000 + 7 000
+        assert tfsa_cumulative_room(2005, 2026) == 27500.0
+
+    def test_trop_jeune(self):
+        assert tfsa_cumulative_room(2015, 2026) == 0.0
+
+    def test_plafond_historique_prioritaire(self):
+        assert tfsa_annual_limit(2015) == 10000.0
+        assert tfsa_annual_limit(2009) == 5000.0
 
 
 # ==================== REER ====================

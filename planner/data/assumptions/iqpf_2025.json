@@ -1,0 +1,23 @@
+{
+  "source": "Normes d'hypothèses de projection 2025 — IQPF / FP Canada",
+  "note": "Rendements bruts avant frais de gestion; soustraire les frais (champ « Frais de gestion »). À mettre à jour chaque année (publication en avril).",
+  "year": 2025,
+  "inflation": 0.021,
+  "salary_growth": 0.031,
+  "borrowing_rate": 0.043,
+  "asset_returns": {
+    "short_term": 0.023,
+    "fixed_income": 0.034,
+    "canadian_equity": 0.064,
+    "foreign_developed_equity": 0.065,
+    "emerging_equity": 0.073
+  },
+  "portfolios": {
+    "conservateur": {"label": "Conservateur (30 % actions / 70 % revenu fixe)",
+                     "weights": {"canadian_equity": 0.15, "foreign_developed_equity": 0.15, "fixed_income": 0.60, "short_term": 0.10}},
+    "equilibre":    {"label": "Équilibré (60 % actions / 40 % revenu fixe)",
+                     "weights": {"canadian_equity": 0.30, "foreign_developed_equity": 0.30, "fixed_income": 0.35, "short_term": 0.05}},
+    "croissance":   {"label": "Croissance (80 % actions / 20 % revenu fixe)",
+                     "weights": {"canadian_equity": 0.35, "foreign_developed_equity": 0.40, "emerging_equity": 0.05, "fixed_income": 0.20}}
+  }
+}

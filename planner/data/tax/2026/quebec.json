@@ -16,6 +16,13 @@
   "living_alone_amount": 2171,
   "senior_credits_reduction_rate": 0.1875,
   "senior_credits_threshold": 42932,
+  "medical": {"threshold_rate": 0.03, "credit_rate": 0.20},
+  "donations": {"first_tier_limit": 200, "first_tier_rate": 0.20, "second_tier_rate": 0.24},
+  "home_support": {
+    "note": "Crédit remboursable pour maintien à domicile des aînés (70+), personne autonome. Taux 40% en 2026 (fin de la hausse graduelle). Seuil à valider.",
+    "min_age": 70, "rate": 0.40, "max_expenses": 19890,
+    "reduction_rate": 0.03, "reduction_threshold": 68774
+  },
   "capital_gains_inclusion": 0.5,
   "dividends": {
     "eligible": {"credit_rate_on_grossed_up": 0.117},

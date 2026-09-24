@@ -19,6 +19,8 @@
   "age_amount_reduction_rate": 0.15,
   "age_eligibility": 65,
   "pension_credit_max": 2000,
+  "medical": {"threshold_rate": 0.03, "threshold_max": 2891},
+  "donations": {"first_tier_limit": 200, "first_tier_rate": 0.14, "second_tier_rate": 0.29},
   "capital_gains_inclusion": 0.5,
   "dividends": {
     "eligible": {"gross_up": 0.38, "credit_rate_on_grossed_up": 0.150198},

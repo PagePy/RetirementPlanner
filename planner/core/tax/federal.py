@@ -31,6 +31,20 @@ class FederalTax:
     def _pension_amount(self, eligible_pension_income: float) -> float:
         return min(eligible_pension_income, self.p["pension_credit_max"])
 
+    def _medical_amount(self, medical: float, net_income: float) -> float:
+        m = self.p.get("medical")
+        if not m or medical <= 0:
+            return 0.0
+        threshold = min(net_income * m["threshold_rate"], m["threshold_max"])
+        return max(0.0, medical - threshold)
+
+    def _donation_credit(self, donations: float) -> float:
+        d = self.p.get("donations")
+        if not d or donations <= 0:
+            return 0.0
+        first = min(donations, d["first_tier_limit"])
+        return first * d["first_tier_rate"] + (donations - first) * d["second_tier_rate"]
+
     # ---------- calcul ----------
     def compute(self, inp: TaxInput, taxable_income: float, net_income: float,
                 grossed_up_eligible: float, grossed_up_non_eligible: float,
@@ -44,12 +58,16 @@ class FederalTax:
         bpa = self._bpa(net_income)
         age_amt = self._age_amount(inp.age, net_income)
         pension_amt = self._pension_amount(inp.eligible_pension_income)
-        credit_base = bpa + age_amt + pension_amt
-        r.non_refundable_credits = credit_base * credit_rate
+        medical_amt = self._medical_amount(inp.medical_expenses, net_income)
+        credit_base = bpa + age_amt + pension_amt + medical_amt
+        donation_credit = self._donation_credit(inp.donations)
+        r.non_refundable_credits = credit_base * credit_rate + donation_credit
         r.credits_detail = {
             "bpa": bpa,
             "age_amount": age_amt,
             "pension_amount": pension_amt,
+            "medical_amount": medical_amt,
+            "donation_credit": donation_credit,
             "credit_rate": credit_rate,
         }
 

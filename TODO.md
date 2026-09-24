@@ -2,7 +2,7 @@
 
 ## Fiscalité et simulation
 
-- [ ] **Indexer la fiscalité** : les paliers d'impôt, les crédits et le seuil de récupération de la SV restent aux valeurs de 2026 alors que les revenus sont indexés, ce qui surestime l'impôt des années futures. Calculer l'impôt en dollars de l'année de départ puis réindexer, comme pour le SRG (`_household_net`, fractionnement, `_finalize_taxes`).
+- [x] **Indexer la fiscalité** : les paliers d'impôt, les crédits, le seuil de récupération de la SV et le plafond REER sont indexés via `price_factor` (`TaxCalculator.compute`, `OAS.clawback`, `estate_timeline`).
 - [ ] **Règle québécoise du fractionnement** : au Québec, le cédant doit avoir 65 ans ou plus, même pour une rente PD (à valider). Le moteur applique la règle fédérale aux deux paliers.
 - [ ] **Afficher le fractionnement** : colonne « Fractionnement » dans les résultats (montant et sens, `pension_split_received`).
 - [ ] **Interrupteur de fractionnement** pour mesurer l'économie avec et sans.
@@ -10,7 +10,7 @@
 - [ ] **REER de conjoint** (non modélisé).
 - [ ] **Dépenses ponctuelles payées par le CELI d'abord** (ex. remplacement de l'auto), en option, avant les retraits REER.
 - [ ] **Année de début pour les dettes**, pour simuler un prêt futur (ex. prêt auto en 2040).
-- [ ] Renommer la colonne « Retenues/Impôts » en « Impôts + récup. SV » (aucune retenue salariale n'y est incluse).
+- [x] Renommer la colonne « Retenues/Impôts » en « Impôts + récup. SV » (aucune retenue salariale n'y est incluse).
 
 ## Distribution avec licences d'essai (Windows + Mac)
 

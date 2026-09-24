@@ -158,6 +158,55 @@ class TestInvariants:
         assert bracket_tax(60000, brackets) == pytest.approx(5000.0 + 2000.0)
 
 
+# ==================== INDEXATION (price_factor) ====================
+
+class TestPriceFactor:
+    def setup_method(self):
+        self.calc = TaxCalculator(year=2025, province="QC")
+
+    @pytest.mark.parametrize("factor", [1.0, 1.02 ** 10, 2.5])
+    def test_homogeneite_impot(self, factor):
+        """Revenus × k avec barèmes × k ⇒ impôt × k et taux inchangés."""
+        base = make_input(age=70, ordinary_income=60000,
+                          eligible_pension_income=20000, capital_gains=5000,
+                          eligible_dividends=3000, deductions=2000,
+                          family_net_income=90000)
+        r0 = self.calc.compute(base)
+        scaled = TaxInput(
+            year=2025, age=70, ordinary_income=60000 * factor,
+            eligible_pension_income=20000 * factor, capital_gains=5000 * factor,
+            eligible_dividends=3000 * factor, deductions=2000 * factor,
+            family_net_income=90000 * factor)
+        r1 = self.calc.compute(scaled, price_factor=factor)
+        assert r1.total_tax == pytest.approx(r0.total_tax * factor, rel=1e-9)
+        assert r1.federal.net_tax == pytest.approx(r0.federal.net_tax * factor, rel=1e-9)
+        assert r1.provincial.net_tax == pytest.approx(r0.provincial.net_tax * factor, rel=1e-9)
+        assert r1.taxable_income == pytest.approx(r0.taxable_income * factor, rel=1e-9)
+        assert r1.marginal_rate == pytest.approx(r0.marginal_rate, abs=1e-9)
+        assert r1.average_rate == pytest.approx(r0.average_rate, abs=1e-9)
+        assert r1.federal.credits_detail["bpa"] == pytest.approx(
+            r0.federal.credits_detail["bpa"] * factor)
+        assert r1.federal.credits_detail["credit_rate"] == r0.federal.credits_detail["credit_rate"]
+
+    def test_facteur_reduit_impot_nominal(self):
+        """Un même revenu nominal est moins imposé quand les barèmes sont indexés."""
+        inp = make_input(ordinary_income=90000)
+        assert (self.calc.compute(inp, price_factor=1.3).total_tax
+                < self.calc.compute(inp).total_tax)
+
+    def test_facteur_invalide(self):
+        with pytest.raises(ValueError):
+            self.calc.compute(make_input(ordinary_income=1000), price_factor=0.0)
+
+    def test_recuperation_sv_seuil_indexe(self):
+        from planner.core.benefits import OAS
+        oas = OAS(2025)
+        threshold = oas.clawback_threshold
+        income = threshold * 1.1
+        assert oas.clawback(income, 8000.0) > 0
+        assert oas.clawback(income, 8000.0, price_factor=1.2) == 0.0
+
+
 # ==================== INFRASTRUCTURE ====================
 
 class TestInfrastructure:
@@ -172,6 +221,29 @@ class TestInfrastructure:
     def test_2026_marque_estime(self):
         assert load_params(2026, "federal")["estimated"] is True
         assert load_params(2025, "federal")["estimated"] is False
+
+
+class TestDataStatus:
+    def test_2025_tout_confirme(self):
+        from planner.core.data_status import data_status, warning_message
+        statuses = data_status(2025, "QC")
+        assert len(statuses) == 4
+        assert all(s.reliable for s in statuses)
+        assert warning_message(2025) == ""
+
+    def test_2026_estime_signale(self):
+        from planner.core.data_status import unreliable_sets, warning_message
+        bad = unreliable_sets(2026, "QC")
+        assert {s.name for s in bad} >= {"Impôt fédéral", "Prestations (RRQ/SV/SRG)"}
+        msg = warning_message(2026)
+        assert "estimées" in msg and "Impôt fédéral" in msg
+
+    def test_annee_future_signale_repli(self):
+        from planner.core.data_status import data_status, warning_message
+        fed = next(s for s in data_status(2040) if s.name == "Impôt fédéral")
+        assert fed.effective_year == max(available_years())
+        assert not fed.reliable
+        assert "2040 indisponible" in warning_message(2040)
 
     def test_province_non_supportee(self):
         with pytest.raises(ValueError, match="non supportée"):

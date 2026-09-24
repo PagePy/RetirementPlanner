@@ -23,10 +23,14 @@ class REER:
     def __post_init__(self):
         self.p = load_account_params(self.year)["rrsp"]
 
-    def add_new_room(self, prior_year_earned_income: float) -> float:
-        """Ajoute les nouveaux droits basés sur le revenu gagné de l'an dernier."""
+    def add_new_room(self, prior_year_earned_income: float,
+                     price_factor: float = 1.0) -> float:
+        """Ajoute les nouveaux droits basés sur le revenu gagné de l'an dernier.
+
+        `price_factor` indexe le plafond annuel au niveau des prix simulé.
+        """
         new_room = min(prior_year_earned_income * self.p["earned_income_rate"],
-                       self.p["annual_max"])
+                       self.p["annual_max"] * price_factor)
         self.contribution_room += new_room
         return new_room
 

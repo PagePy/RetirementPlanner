@@ -25,3 +25,10 @@ def load_account_params(year: int) -> dict:
 def load_rrif_factors() -> dict:
     with open(DATA_DIR / "rrif_lif_factors.json", encoding="utf-8") as f:
         return json.load(f)
+
+
+@lru_cache(maxsize=1)
+def load_tfsa_limits() -> dict[int, float]:
+    """Plafonds annuels CELI historiques {année: plafond}."""
+    with open(DATA_DIR / "tfsa_limits.json", encoding="utf-8") as f:
+        return {int(y): float(v) for y, v in json.load(f)["limits_by_year"].items()}

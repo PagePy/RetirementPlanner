@@ -97,6 +97,22 @@ class TestSingle:
         p70 = next(r.persons[0] for r in results if r.persons[0].age == 70)
         assert p70.gis == 0.0
 
+    def test_srg_compte_dans_la_cible(self):
+        """Le SRG est un revenu disponible: les retraits CELI diminuent d'autant
+        et rien n'est retiré pour être aussitôt réinvesti."""
+        pauvre = single_person(
+            rrq_monthly_at_65=300.0,
+            accounts=AccountsConfig(celi_balance=400000.0, celi_room=7000.0),
+            contributions=ContributionsConfig())
+        results = run_single(pauvre, target_net_income=30000.0)
+        r = next(r for r in results if r.persons[0].age == 70)
+        p = r.persons[0]
+        assert p.gis > 1000
+        assert r.net_cash == pytest.approx(r.target_net, abs=5.0)
+        assert r.reinvested == 0.0
+        assert p.wd_celi == pytest.approx(
+            r.target_net - p.rrq - p.oas - p.gis + p.tax_total, abs=5.0)
+
     def test_gain_capital_au_prorata_du_pbr(self):
         """Les retraits non-enregistrés réalisent un gain partiel, pas 50% forfaitaire."""
         results = run_single(target_net_income=70000.0)
@@ -363,3 +379,169 @@ class TestCouple:
         results = self.couple()
         r0 = results[0]
         assert r0.persons[0].age - r0.persons[1].age == 4
+
+    def test_retraites_decalees_cible_couverte(self):
+        """P1 (1964) retraité à 65 en 2029, P2 (1968) travaille jusqu'en 2033:
+        la cible ménage s'applique dès la première retraite et est couverte."""
+        results = self.couple()
+        mixed = [r for r in results if 2029 <= r.year < 2033]
+        assert mixed
+        for r in mixed:
+            assert r.persons[0].retired and not r.persons[1].retired
+            assert r.persons[1].salary > 0
+            assert r.net_cash >= r.target_net - 5.0, f"année {r.year}"
+
+    def test_roulement_conserve_patrimoine_menage(self):
+        """Le décès ne détruit pas de patrimoine: la somme des comptes du
+        ménage est continue (à la croissance et aux retraits près)."""
+        results = self.couple(premature_death={"person_index": 0, "year": 2040})
+        before = next(r for r in results if r.year == 2039).total_wealth
+        after = next(r for r in results if r.year == 2040).total_wealth
+        assert after > before * 0.85
+
+    def test_fractionnement_optimal_ne_depasse_pas_sans_fractionnement(self):
+        from planner.core.benefits import OAS
+        from planner.core.simulation.splitting import (
+            couple_tax_with_split, optimize_pension_split)
+        from planner.core.tax import TaxCalculator, TaxInput
+        calc, oas = TaxCalculator(2026, "QC"), OAS(2026)
+        i1 = TaxInput(year=2026, age=68, ordinary_income=90000,
+                      eligible_pension_income=60000)
+        i2 = TaxInput(year=2026, age=66, ordinary_income=15000)
+        sans = couple_tax_with_split(calc, oas, i1, i2, 8000, 8000,
+                                     60000, 0, 0.0, 0.0)["total"]
+        best = optimize_pension_split(calc, oas, i1, i2, 8000, 8000, 60000, 0)
+        assert best["total"] < sans
+        assert 0 < best["transfer_1_to_2"] <= 30000
+
+
+class TestRepartitionCouple:
+    def retired_couple(self, acc1: AccountsConfig, acc2: AccountsConfig,
+                       target: float, **p2_overrides):
+        p1 = single_person(name="P1", birth_year=1956, salary=0.0,
+                           rrq_monthly_at_65=800.0, accounts=acc1,
+                           contributions=ContributionsConfig())
+        p2 = single_person(name="P2", birth_year=1956, salary=0.0,
+                           rrq_monthly_at_65=800.0, accounts=acc2,
+                           contributions=ContributionsConfig(), **p2_overrides)
+        hh = HouseholdConfig(persons=[p1, p2], target_net_income=target)
+        return HouseholdSimulator(
+            hh, ScenarioConfig(start_year=2026, inflation=0.0)).run()
+
+    def test_celi_retire_au_prorata_des_soldes(self):
+        results = self.retired_couple(
+            AccountsConfig(celi_balance=300000.0), AccountsConfig(celi_balance=100000.0),
+            target=60000.0)
+        r0 = results[0]
+        w1, w2 = r0.persons[0].wd_celi, r0.persons[1].wd_celi
+        assert w1 > 0 and w2 > 0
+        assert w1 / w2 == pytest.approx(3.0, rel=0.01)
+
+    def test_reer_nivelle_les_revenus_imposables(self):
+        """P2 a une rente PD de 30 000$: les retraits REER doivent d'abord
+        combler P1 pour égaliser les revenus imposables."""
+        results = self.retired_couple(
+            AccountsConfig(reer_balance=600000.0), AccountsConfig(reer_balance=600000.0),
+            target=70000.0, db_status="in_payment", db_pension=30000.0)
+        r0 = results[0]
+        p1, p2 = r0.persons
+        assert p1.wd_reer > p2.wd_reer
+        # Nivellement avant fractionnement: l'écart des retraits compense la rente
+        if p2.wd_reer > 0:
+            assert p1.wd_reer - p2.wd_reer == pytest.approx(30000.0, abs=200.0)
+        else:
+            assert p1.wd_reer <= 30000.0 + 200.0
+
+    def test_reer_egal_si_situations_identiques(self):
+        results = self.retired_couple(
+            AccountsConfig(reer_balance=500000.0), AccountsConfig(reer_balance=500000.0),
+            target=70000.0)
+        r0 = results[0]
+        assert r0.persons[0].wd_reer == pytest.approx(r0.persons[1].wd_reer, rel=0.01)
+        assert r0.net_cash >= r0.target_net - 5.0
+
+    def test_solde_epuise_bascule_sur_le_conjoint(self):
+        """Quand le REER du conjoint au revenu le plus bas est trop petit, le
+        reste vient de l'autre conjoint (pas de cible manquée)."""
+        results = self.retired_couple(
+            AccountsConfig(reer_balance=5000.0), AccountsConfig(reer_balance=800000.0),
+            target=70000.0)
+        r0 = results[0]
+        assert r0.persons[0].bal_reer == 0.0  # REER de P1 épuisé
+        assert r0.persons[1].wd_reer > 30000.0
+        assert r0.net_cash >= r0.target_net - 5.0
+
+
+class TestIndexationFiscale:
+    def pensioner(self, inflation: float):
+        """Retraité vivant d'une rente PD indexée: revenu réel constant."""
+        p = single_person(
+            birth_year=1960, retirement_age=60, life_expectancy=90,
+            salary=0.0, rrq_monthly_at_65=1200.0,
+            db_status="in_payment", db_pension=60000.0, db_indexed=True,
+            accounts=AccountsConfig(), contributions=ContributionsConfig())
+        # Cible inatteignable: aucun surplus réinvesti, revenu = rente + RRQ + SV
+        hh = HouseholdConfig(persons=[p], target_net_income=200000.0)
+        return HouseholdSimulator(
+            hh, ScenarioConfig(start_year=2026, inflation=inflation)).run()
+
+    def test_taux_moyen_stable_avec_inflation(self):
+        """Barèmes indexés: le taux moyen d'impôt ne dérive pas avec l'inflation
+        (âge 66 à 74, avant la majoration SV de 75 ans)."""
+        results = self.pensioner(0.03)
+        rates = {r.persons[0].age: r.persons[0].tax_total / r.persons[0].taxable_income
+                 for r in results if 66 <= r.persons[0].age <= 74}
+        assert rates[74] == pytest.approx(rates[66], abs=0.002)
+
+    def test_inflation_nulle_impot_constant(self):
+        results = self.pensioner(0.0)
+        taxes = [r.persons[0].tax_total for r in results
+                 if 66 <= r.persons[0].age <= 74]
+        assert max(taxes) - min(taxes) < 1.0
+
+    def test_seuil_recuperation_sv_indexe(self):
+        """À revenu réel constant sous le seuil, aucune récupération SV n'apparaît
+        avec le temps."""
+        results = self.pensioner(0.03)
+        p_late = next(r.persons[0] for r in results if r.persons[0].age == 85)
+        assert p_late.oas > 0
+        assert p_late.oas_clawback == 0.0
+
+
+class TestNoteInsuffisance:
+    def test_note_quand_cible_inatteignable(self):
+        p = single_person(
+            birth_year=1956, salary=0.0, rrq_monthly_at_65=800.0,
+            accounts=AccountsConfig(reer_balance=20000.0, celi_balance=50000.0),
+            contributions=ContributionsConfig())
+        hh = HouseholdConfig(persons=[p], target_net_income=80000.0,
+                             celi_strategy="jamais")
+        r0 = HouseholdSimulator(hh, ScenarioConfig(start_year=2026)).run()[0]
+        assert r0.target_gap < -1000
+        assert "manque" in r0.shortfall_note
+        assert "REER" in r0.shortfall_note
+        assert "CELI exclu" in r0.shortfall_note
+
+    def test_pas_de_note_si_cible_atteinte(self):
+        r0 = run_single()[0]
+        assert r0.shortfall_note == ""
+
+
+class TestSurplusReinvesti:
+    def test_minimum_ferr_excedentaire_reinvesti(self):
+        """Un minimum FERR forcé supérieur à la cible est placé (CELI puis
+        non-enregistré) plutôt que perdu."""
+        p = single_person(
+            birth_year=1950, retirement_age=65, life_expectancy=90,
+            salary=0.0, rrq_monthly_at_65=0.0, oas_start_age=70,
+            accounts=AccountsConfig(ferr_balance=1500000.0, celi_room=7000.0),
+            contributions=ContributionsConfig())
+        hh = HouseholdConfig(persons=[p], target_net_income=20000.0)
+        results = HouseholdSimulator(
+            hh, ScenarioConfig(start_year=2026, inflation=0.0)).run()
+        r0 = results[0]
+        assert r0.persons[0].ferr_min > 60000
+        assert r0.reinvested > 0
+        assert r0.persons[0].contrib_celi == pytest.approx(7000.0)
+        assert r0.persons[0].bal_taxable > 0
+        assert r0.reinvested == pytest.approx(r0.net_cash - r0.target_net)

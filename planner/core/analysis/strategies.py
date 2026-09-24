@@ -51,7 +51,8 @@ def compare_strategies(hh: HouseholdConfig, scen: ScenarioConfig,
             1 for r in results
             if any(p.retired for p in r.persons if p.alive)
             and r.target_gap < -tolerance)
-        estates = estate_timeline(results, province=hh.province)
+        estates = estate_timeline(results, province=hh.province,
+                                  inflation=scen.inflation)
         outcomes.append(StrategyOutcome(
             order=list(order), celi_strategy=celi_strategy,
             description=description,
@@ -62,3 +63,47 @@ def compare_strategies(hh: HouseholdConfig, scen: ScenarioConfig,
             years_below_target=below))
     return sorted(outcomes,
                   key=lambda o: (not o.success, -o.final_net_estate))
+
+
+# ==================== FONTE DU REER (plancher de revenu imposable) ====================
+
+DEFAULT_FLOORS = (None, 25000.0, 35000.0, 45000.0, 55000.0, 70000.0, 90000.0)
+
+
+@dataclass
+class IncomeFloorOutcome:
+    floor: float | None            # dollars d'aujourd'hui par personne
+    lifetime_tax: float
+    lifetime_gis: float
+    final_wealth: float
+    final_net_estate: float
+    success: bool
+    total_meltdown: float          # retraits volontaires cumulés
+
+    @property
+    def label(self) -> str:
+        return "Aucune fonte (retraits au besoin)" if self.floor is None \
+            else f"Plancher {self.floor:,.0f} $".replace(",", " ")
+
+
+def compare_income_floors(hh: HouseholdConfig, scen: ScenarioConfig,
+                          floors: tuple = DEFAULT_FLOORS,
+                          tolerance: float = 500.0) -> list[IncomeFloorOutcome]:
+    """Simule plusieurs planchers de revenu imposable (retraits REER/FERR
+    volontaires réinvestis) et classe par succession nette finale."""
+    outcomes = []
+    for floor in floors:
+        results = HouseholdSimulator(replace(hh, taxable_income_floor=floor), scen).run()
+        below = sum(1 for r in results
+                    if any(p.retired for p in r.persons if p.alive)
+                    and r.target_gap < -tolerance)
+        estates = estate_timeline(results, hh.province, scen.inflation)
+        outcomes.append(IncomeFloorOutcome(
+            floor=floor,
+            lifetime_tax=sum(r.total_tax for r in results),
+            lifetime_gis=sum(p.gis for r in results for p in r.persons),
+            final_wealth=results[-1].total_wealth,
+            final_net_estate=estates[-1].net_estate if estates else 0.0,
+            success=below == 0,
+            total_meltdown=sum(p.meltdown_withdrawal for r in results for p in r.persons)))
+    return sorted(outcomes, key=lambda o: (not o.success, -o.final_net_estate))

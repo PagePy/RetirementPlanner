@@ -101,18 +101,31 @@ class FinancialCapacity:
 
 def financial_capacity(hh: HouseholdConfig, scen: ScenarioConfig,
                        max_income: float = 1000000.0,
-                       precision: float = 120.0) -> FinancialCapacity:
+                       precision: float = 120.0,
+                       estate_goal: float = 0.0) -> FinancialCapacity:
     """Dépense nette maximale permettant d'épuiser le patrimoine financier.
 
     Le montant est exprimé en dollars d'aujourd'hui et suit l'indexation de la
     cible du ménage. La recherche conserve la cible la plus élevée atteinte
     chaque année de retraite, ce qui amène les comptes près de zéro à l'horizon.
+
+    `estate_goal`: succession nette minimale à laisser (dollars d'aujourd'hui,
+    indexée à l'horizon); 0 = épuiser le patrimoine.
     """
+    def ok(target: float) -> bool:
+        results = _run(replace(hh, target_net_income=target), scen)
+        if not plan_succeeds(results, tolerance=1.0):
+            return False
+        if estate_goal <= 0:
+            return True
+        estates = estate_timeline(results, hh.province, scen.inflation)
+        goal_nominal = estate_goal * (1 + scen.inflation) ** (results[-1].year - scen.start_year)
+        return bool(estates) and estates[-1].net_estate >= goal_nominal
+
     lo, hi = 0.0, max_income
     while hi - lo > precision:
         mid = (lo + hi) / 2
-        if plan_succeeds(
-                _run(replace(hh, target_net_income=mid), scen), tolerance=1.0):
+        if ok(mid):
             lo = mid
         else:
             hi = mid
@@ -152,7 +165,7 @@ def optimal_benefit_ages(hh: HouseholdConfig, scen: ScenarioConfig,
             persons[person_index] = replace(
                 persons[person_index], rrq_start_age=rrq_age, oas_start_age=oas_age)
             results = _run(replace(hh, persons=persons), scen)
-            estates = estate_timeline(results, hh.province)
+            estates = estate_timeline(results, hh.province, scen.inflation)
             options.append(BenefitAgeOption(
                 rrq_age=rrq_age, oas_age=oas_age,
                 success=plan_succeeds(results),

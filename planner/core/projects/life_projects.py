@@ -131,8 +131,8 @@ def retirement_cost_of_project(hh: HouseholdConfig, scen: ScenarioConfig,
     with_results = HouseholdSimulator(
         replace(hh, special_expenses=expenses), scen).run()
 
-    base_estate = estate_timeline(base_results, hh.province)
-    with_estate = estate_timeline(with_results, hh.province)
+    base_estate = estate_timeline(base_results, hh.province, scen.inflation)
+    with_estate = estate_timeline(with_results, hh.province, scen.inflation)
     still_ok = not any(
         r.target_gap < -tolerance for r in with_results
         if any(p.retired for p in r.persons if p.alive))

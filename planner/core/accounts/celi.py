@@ -8,11 +8,17 @@ Règles:
 import math
 from dataclasses import dataclass, field
 
-from planner.core.accounts.params import load_account_params
+from planner.core.accounts.params import load_account_params, load_tfsa_limits
+
+TFSA_START_YEAR = 2009
+TFSA_MIN_AGE = 18
 
 
 def annual_limit(year: int, inflation: float = 0.0) -> float:
     """Plafond officiel si publié, sinon dernier plafond connu indexé et arrondi au 500 $."""
+    history = load_tfsa_limits()
+    if year in history:
+        return history[year]
     params = load_account_params(year)
     limit = params["tfsa"]["annual_limit"]
     years_after = year - params["_effective_year"]
@@ -20,6 +26,13 @@ def annual_limit(year: int, inflation: float = 0.0) -> float:
         return float(limit)
     raw = limit * (1 + inflation) ** years_after
     return float(math.floor(raw / 500 + 0.5) * 500)
+
+
+def cumulative_room(birth_year: int, year: int, inflation: float = 0.0) -> float:
+    """Droits CELI cumulés au 1er janvier de `year` pour une personne qui n'a
+    jamais cotisé (résidente depuis 18 ans)."""
+    first = max(TFSA_START_YEAR, birth_year + TFSA_MIN_AGE)
+    return float(sum(annual_limit(y, inflation) for y in range(first, year + 1)))
 
 
 @dataclass

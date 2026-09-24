@@ -2,11 +2,16 @@
 
 Lancement: python run_app.py
 """
+import logging
+
 from nicegui import ui
 
 from gui import state as state_mod
 from gui.pages import profile_page, patrimoine_page, resultats_page
 from gui.pages import analyses_page, outils_page
+from planner.core.data_status import warning_message
+
+log = logging.getLogger(__name__)
 
 # Toutes les fenêtres popup/dialog doivent être déplaçables: un
 # MutationObserver global rend chaque q-dialog draggable automatiquement.
@@ -75,6 +80,7 @@ def build_app():
                 path = state_mod.save_profile(app_state)
                 ui.notify(f"Profil sauvegardé: {path.name}", type="positive")
             except Exception as exc:
+                log.exception("Échec de la sauvegarde du profil")
                 ui.notify(f"Erreur: {exc}", type="negative")
 
         def open_load_dialog():
@@ -84,27 +90,80 @@ def build_app():
                 ui.label("Les anciens profils Streamlit sont migrés "
                          "automatiquement.").classes("text-xs text-gray-500")
 
+                def apply_state(loaded: dict, message: str):
+                    app_state.clear()
+                    app_state.update(loaded)
+                    dialog.close()
+                    render_pages.refresh()
+                    ui.notify(message, type="positive")
+
                 def load(name: str):
                     try:
-                        loaded = state_mod.load_profile(name)
-                        app_state.clear()
-                        app_state.update(loaded)
-                        dialog.close()
-                        render_pages.refresh()
-                        ui.notify(f"Profil «{name}» chargé",
-                                  type="positive")
+                        apply_state(state_mod.load_profile(name), f"Profil «{name}» chargé")
                     except Exception as exc:
+                        log.exception("Échec du chargement du profil %s", name)
                         ui.notify(f"Erreur: {exc}", type="negative")
 
+                def open_history(name: str):
+                    versions = state_mod.profile_history(name)
+                    with ui.dialog() as hist_dialog, ui.card().classes("min-w-[700px]"):
+                        ui.label(f"Historique — {name}").classes("text-lg font-bold")
+                        if not versions:
+                            ui.label("Aucune version archivée (l'historique se crée à "
+                                     "chaque sauvegarde qui modifie le profil).") \
+                                .classes("text-gray-500")
+                        current = state_mod.load_profile(name)
+                        newer = current
+                        for path in versions:
+                            older = state_mod.load_version(path)
+                            changes = state_mod.diff_states(older, newer)
+                            with ui.expansion(
+                                    f"{path.stem} — {len(changes)} changement(s) vers la "
+                                    f"version suivante").classes("w-full"):
+                                for c in changes[:60]:
+                                    ui.label(f"{c['path']}: {c['old']} → {c['new']}") \
+                                        .classes("text-xs font-mono")
+                                if len(changes) > 60:
+                                    ui.label(f"… et {len(changes) - 60} autres").classes("text-xs")
+
+                                def restore(p=path):
+                                    loaded = state_mod.load_version(p)
+                                    hist_dialog.close()
+                                    apply_state(loaded, f"Version {p.stem} restaurée "
+                                                        "(non sauvegardée)")
+
+                                ui.button("Restaurer cette version", on_click=restore) \
+                                    .props("dense outline")
+                            newer = older
+                    hist_dialog.open()
+
                 for name in profiles:
-                    ui.button(name, on_click=lambda n=name: load(n)) \
-                        .props("flat align=left").classes("w-full")
+                    with ui.row().classes("items-center w-full no-wrap"):
+                        ui.button(name, on_click=lambda n=name: load(n)) \
+                            .props("flat align=left").classes("flex-grow")
+                        ui.button(icon="history",
+                                  on_click=lambda n=name: open_history(n)) \
+                            .props("flat dense").tooltip("Historique des versions")
                 if not profiles:
                     ui.label("Aucun profil trouvé.")
             dialog.open()
 
         ui.button("💾 Sauvegarder", on_click=do_save).props("flat color=white")
         ui.button("📂 Charger", on_click=open_load_dialog).props("flat color=white")
+
+    def _warning(start_year) -> str:
+        try:
+            return warning_message(int(start_year or 0), app_state.get("province", "QC"))
+        except Exception:
+            log.exception("Statut des paramètres indisponible")
+            return ""
+
+    with ui.row().classes("w-full items-center gap-2 bg-orange-1 text-orange-10 "
+                          "px-4 py-2 text-sm") as banner:
+        ui.icon("warning").classes("text-lg")
+        ui.label().bind_text_from(app_state, "start_year", backward=_warning)
+    banner.bind_visibility_from(app_state, "start_year",
+                                backward=lambda y: bool(_warning(y)))
 
     render_pages()
 

@@ -1,4 +1,7 @@
 """Page Résultats — dashboard de décaissement exhaustif."""
+import csv
+import io
+
 import plotly.graph_objects as go
 from nicegui import ui, run
 
@@ -14,11 +17,13 @@ def _income_chart(results) -> go.Figure:
     years = [r.year for r in results]
     fig = go.Figure()
     sources = [
-        ("Salaires", lambda r: sum(p.salary for p in r.persons)),
+        ("Salaires", lambda r: sum(p.salary + p.part_time_income for p in r.persons)),
+        ("Loyers nets", lambda r: r.rental_income),
         ("Rentes PD", lambda r: sum(p.db_pension for p in r.persons)),
+        ("Rentes viagères", lambda r: sum(p.annuity_income for p in r.persons)),
         ("RRQ", lambda r: sum(p.rrq for p in r.persons)),
         ("SV", lambda r: sum(p.oas for p in r.persons)),
-        ("SRG", lambda r: sum(p.gis for p in r.persons)),
+        ("SRG / crédits remb.", lambda r: sum(p.gis + p.refundable_credits for p in r.persons)),
         ("FERR/FRV", lambda r: sum(p.wd_ferr + p.wd_frv for p in r.persons)),
         ("REER", lambda r: sum(p.wd_reer for p in r.persons)),
         ("Non-enregistré", lambda r: sum(p.wd_taxable for p in r.persons)),
@@ -98,16 +103,18 @@ def _active_balance_fields(results) -> list[tuple[str, str]]:
 _COLUMN_TOOLTIPS = {
     "year": "Année civile de la projection.",
     "ages": "Âge de chaque personne à la fin de l'année.",
-    "salary": "Revenu d'emploi (salaire) gagné durant l'année.",
-    "db": "Rentes d'employeur à prestations déterminées (régimes PD).",
+    "salary": "Revenu d'emploi (salaire, incluant l'emploi à temps partiel après la retraite) "
+              "et loyers nets d'immeubles locatifs.",
+    "db": "Rentes d'employeur à prestations déterminées (régimes PD) et rentes viagères achetées.",
     "rrq": "Rente du Régime de rentes du Québec (RRQ / RPC).",
     "oas": "Pension de la Sécurité de la vieillesse (SV), incluant la récupération.",
     "minimums": "Retraits MINIMUMS obligatoires du FERR et du FRV, imposés par la loi selon l'âge.",
-    "registered": "Retraits REER + retraits FERR/FRV AU-DELÀ du minimum obligatoire.",
+    "registered": "Retraits REER + retraits FERR/FRV AU-DELÀ du minimum obligatoire "
+                  "(incluant la fonte volontaire du REER, réinvestie).",
     "celi": "Retraits du CELI (non imposables), utilisés en dernier recours.",
     "nonreg": "Retraits du compte non enregistré (imposable sur les gains).",
-    "other": "SRG : Supplément de revenu garanti reçu (prestation non imposable).",
-    "debt": "Paiements de dettes de l'année (service de la dette).",
+    "other": "SRG (Supplément de revenu garanti) et crédits remboursables (maintien à domicile), non imposables.",
+    "debt": "Paiements de dettes de l'année (service de la dette) et primes d'assurance vie.",
     "savings": "Cotisations de l'année durant l'accumulation : REER, CELI, "
                "CELIAPP, non-enr. et régime CD (incluant la part employeur).",
     "tax": "Impôts totaux + récupération de la SV pour l'année.",
@@ -125,13 +132,13 @@ def _cash_flow_columns_with_balances(balance_fields):
          "tooltip": _COLUMN_TOOLTIPS.get(c, "")}
         for c, l in [
             ("year", "Année"), ("ages", "Âges"),
-            ("salary", "Revenu gagné"), ("db", "Régimes de retraite"),
+            ("salary", "Revenu gagné"), ("db", "Rentes"),
             ("rrq", "RPC/RRQ"), ("oas", "SV"),
             ("minimums", "Min. FERR/FRV"),
             ("registered", "Enregistré"), ("celi", "CELI"),
-            ("nonreg", "Non enregistré"), ("other", "SRG"),
-            ("debt", "Dette"), ("savings", "Épargne"),
-            ("tax", "Retenues/Impôts"), ("expenses", "Dépenses"),
+            ("nonreg", "Non enregistré"), ("other", "SRG / crédits remb."),
+            ("debt", "Dette / assur."), ("savings", "Épargne"),
+            ("tax", "Impôts + récup. SV"), ("expenses", "Dépenses"),
             ("shortfall", "Insuffisances"),
         ]]
     columns += [{"name": field, "label": label, "field": field, "align": "right",
@@ -182,28 +189,27 @@ def _registered_withdrawals(p) -> float:
 
 
 def _savings(p) -> float:
-    return (p.contrib_reer + p.contrib_celi + p.contrib_celiapp
+    return (p.contrib_reer + p.contrib_spousal_reer + p.contrib_celi + p.contrib_celiapp
             + p.contrib_taxable + p.contrib_dc_employee + p.contrib_dc_employer)
 
 
 def _flow_values(persons) -> dict:
     return {
-        "salary": sum(p.salary for p in persons),
-        "db": sum(p.db_pension for p in persons),
+        "salary": sum(p.salary + p.part_time_income + p.rental_income for p in persons),
+        "db": sum(p.db_pension + p.annuity_income for p in persons),
         "rrq": sum(p.rrq for p in persons),
         "oas": sum(p.oas for p in persons),
         "minimums": sum(_minimums(p) for p in persons),
         "registered": sum(_registered_withdrawals(p) for p in persons),
         "celi": sum(p.wd_celi for p in persons),
         "nonreg": sum(p.wd_taxable for p in persons),
-        "other": sum(p.gis for p in persons),
+        "other": sum(p.gis + p.refundable_credits for p in persons),
         "savings": sum(_savings(p) for p in persons),
         "tax": sum(p.tax_total + p.oas_clawback for p in persons),
     }
 
 
-def _year_table(results):
-    balance_fields = _active_balance_fields(results)
+def _year_rows(results, balance_fields, fmt=_fmt) -> list[dict]:
     rows = []
     for r in results:
         alive = [p for p in r.persons if p.alive]
@@ -212,20 +218,46 @@ def _year_table(results):
         rows.append({
             "year": r.year,
             "ages": " / ".join(str(p.age) for p in alive),
-            **{key: _fmt(value) for key, value in values.items()},
-            **{key: _fmt(value) for key, value in balances.items()},
-            "debt": _fmt(r.debt_service),
-            "expenses": _fmt(max(0.0, r.target_net - r.debt_service)),
-            "shortfall": _fmt(max(0.0, -r.target_gap)),
+            **{key: fmt(value) for key, value in values.items()},
+            **{key: fmt(value) for key, value in balances.items()},
+            "debt": fmt(r.debt_service + r.insurance_premiums),
+            "expenses": fmt(max(0.0, r.target_net - r.debt_service - r.insurance_premiums)),
+            "shortfall": fmt(max(0.0, -r.target_gap)),
         })
-    _cash_flow_table(_cash_flow_columns_with_balances(balance_fields), rows)
+    return rows
 
 
-def _person_detail_table(results, person_index: int, name: str):
-    ui.label(f"Flux individuel — {name}").classes("font-bold mt-4")
-    ui.label("Les dépenses et dettes communes sont présentées dans la vue familiale.") \
-        .classes("text-sm text-gray-500")
+def _year_table(results):
     balance_fields = _active_balance_fields(results)
+    _cash_flow_table(_cash_flow_columns_with_balances(balance_fields),
+                     _year_rows(results, balance_fields))
+
+
+def export_csv(results, person_names: list[str]) -> bytes:
+    """Tableau familial + un bloc par personne, valeurs numériques brutes."""
+    balance_fields = _active_balance_fields(results)
+    columns = _cash_flow_columns_with_balances(balance_fields)
+    keys = [c["field"] for c in columns]
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=";", lineterminator="\n")
+
+    def block(title: str, rows: list[dict]) -> None:
+        writer.writerow([title])
+        writer.writerow([c["label"] for c in columns])
+        for row in rows:
+            writer.writerow([row.get(k, "") for k in keys])
+        writer.writerow([])
+
+    raw = lambda x: round(x)  # noqa: E731
+    block("Ménage", _year_rows(results, balance_fields, fmt=raw))
+    for i, name in enumerate(person_names):
+        block(name or f"Personne {i + 1}",
+              _person_rows(results, i, balance_fields, fmt=raw))
+    # BOM pour qu'Excel détecte l'UTF-8
+    return ("\ufeff" + buf.getvalue()).encode("utf-8")
+
+
+def _person_rows(results, person_index: int, balance_fields, fmt=_fmt) -> list[dict]:
     rows = []
     for r in results:
         p = r.persons[person_index]
@@ -235,11 +267,20 @@ def _person_detail_table(results, person_index: int, name: str):
         balances = _balance_values([p], balance_fields)
         rows.append({
             "year": r.year, "ages": str(p.age),
-            **{key: _fmt(value) for key, value in values.items()},
-            **{key: _fmt(value) for key, value in balances.items()},
+            **{key: fmt(value) for key, value in values.items()},
+            **{key: fmt(value) for key, value in balances.items()},
             "debt": "—", "expenses": "—", "shortfall": "—",
         })
-    _cash_flow_table(_cash_flow_columns_with_balances(balance_fields), rows)
+    return rows
+
+
+def _person_detail_table(results, person_index: int, name: str):
+    ui.label(f"Flux individuel — {name}").classes("font-bold mt-4")
+    ui.label("Les dépenses et dettes communes sont présentées dans la vue familiale.") \
+        .classes("text-sm text-gray-500")
+    balance_fields = _active_balance_fields(results)
+    _cash_flow_table(_cash_flow_columns_with_balances(balance_fields),
+                     _person_rows(results, person_index, balance_fields))
 
 
 def build(state: dict):
@@ -271,10 +312,44 @@ def build(state: dict):
                      else f"⚠️ {len(shortfalls)} années sous la cible",
                      "text-positive" if not shortfalls else "text-negative")
                 card("Impôt total à vie", _fmt(sum(r.total_tax for r in results)))
+                total_fees = sum(r.total_fees for r in results)
+                if total_fees > 0:
+                    card("Frais de gestion à vie", _fmt(total_fees), "text-warning")
                 card("Patrimoine final", _fmt(results[-1].total_wealth))
                 card("Valeur nette finale", _fmt(results[-1].net_worth))
                 card("Succession nette finale",
                      _fmt(estates[-1].net_estate) if estates else "—")
+            if shortfalls:
+                with ui.expansion(
+                        f"⚠️ Pourquoi la cible n'est pas atteinte ({len(shortfalls)} années)") \
+                        .classes("w-full"):
+                    for r in shortfalls:
+                        ui.label(f"{r.year}: {r.shortfall_note or 'cible non atteinte'}") \
+                            .classes("text-sm")
+            names = [state["persons"][i]["name"] for i in range(len(results[0].persons))]
+            with ui.row().classes("gap-2"):
+                ui.button("⬇️ Exporter CSV", icon="download",
+                          on_click=lambda: ui.download.content(
+                              export_csv(results, names),
+                              f"{state.get('profile_name') or 'simulation'}.csv")) \
+                    .props("flat")
+
+                async def do_pdf():
+                    from gui import report
+                    ui.notify("Génération du rapport PDF...", type="info")
+                    try:
+                        pdf = await run.cpu_bound(
+                            report.build_pdf, dict(state), hh, scen, results, estates)
+                    except Exception as exc:
+                        ui.notify(f"Erreur PDF: {exc}", type="negative")
+                        return
+                    ui.download.content(
+                        pdf, f"{state.get('profile_name') or 'plan'}-rapport.pdf")
+
+                ui.button("📄 Rapport PDF", icon="picture_as_pdf", on_click=do_pdf) \
+                    .props("flat") \
+                    .tooltip("Rapport client: hypothèses, résultats clés, graphiques, "
+                             "projection annuelle et avertissements.")
             ui.plotly(_income_chart(results)).classes("w-full")
             with ui.row().classes("w-full gap-4 flex-wrap"):
                 ui.plotly(_wealth_chart(results)).classes("w-full lg:w-[48%]")

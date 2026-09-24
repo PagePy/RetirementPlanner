@@ -30,11 +30,19 @@ class QuebecTax(ProvinceTax):
         senior_amount = max(0.0, senior_base - reduction)
 
         credit_base = p["bpa"] + senior_amount
-        r.non_refundable_credits = credit_base * credit_rate
+        medical_credit = self._medical_credit(inp.medical_expenses, family_income)
+        donation_credit = self._donation_credit(inp.donations)
+        r.non_refundable_credits = (credit_base * credit_rate
+                                    + medical_credit + donation_credit)
+        r.refundable_credits = self._home_support_credit(
+            inp.age, inp.home_support_expenses, family_income)
         r.credits_detail = {
             "bpa": p["bpa"],
             "senior_amount_before_reduction": senior_base,
             "senior_amount": senior_amount,
+            "medical_credit": medical_credit,
+            "donation_credit": donation_credit,
+            "home_support_credit": r.refundable_credits,
             "credit_rate": credit_rate,
         }
 
@@ -47,3 +55,27 @@ class QuebecTax(ProvinceTax):
         )
         r.net_tax = max(0.0, tax_after_credits - r.dividend_credits)
         return r
+
+    # ---------- crédits additionnels ----------
+    def _medical_credit(self, medical: float, family_income: float) -> float:
+        m = self.p.get("medical")
+        if not m or medical <= 0:
+            return 0.0
+        return max(0.0, medical - family_income * m["threshold_rate"]) * m["credit_rate"]
+
+    def _donation_credit(self, donations: float) -> float:
+        d = self.p.get("donations")
+        if not d or donations <= 0:
+            return 0.0
+        first = min(donations, d["first_tier_limit"])
+        return first * d["first_tier_rate"] + (donations - first) * d["second_tier_rate"]
+
+    def _home_support_credit(self, age: int, expenses: float,
+                             family_income: float) -> float:
+        """Crédit remboursable pour maintien à domicile (personne autonome)."""
+        h = self.p.get("home_support")
+        if not h or expenses <= 0 or age < h["min_age"]:
+            return 0.0
+        credit = min(expenses, h["max_expenses"]) * h["rate"]
+        reduction = max(0.0, family_income - h["reduction_threshold"]) * h["reduction_rate"]
+        return max(0.0, credit - reduction)

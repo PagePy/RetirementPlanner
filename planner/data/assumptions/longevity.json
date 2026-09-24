@@ -1,0 +1,10 @@
+{
+  "source": "Normes d'hypothèses de projection IQPF/FP Canada (probabilités de survie à 65 ans, table CPM2014 projetée)",
+  "note": "Âge atteint ou dépassé avec la probabilité indiquée, pour une personne de 65 ans. Valeurs arrondies; à valider à chaque mise à jour des normes.",
+  "reference_age": 65,
+  "planning_ages": {
+    "M": {"50": 89, "25": 94, "10": 98},
+    "F": {"50": 91, "25": 96, "10": 100}
+  },
+  "recommended_probability": 25
+}

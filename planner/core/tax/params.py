@@ -20,7 +20,7 @@ def load_params(year: int, name: str) -> dict:
 
     Si l'année demandée n'existe pas, utilise la plus récente disponible
     (les projections futures réutilisent les derniers barèmes connus; le
-    moteur de simulation applique ensuite sa propre indexation).
+    simulateur les indexe via `price_factor` dans `TaxCalculator.compute`).
     """
     years = available_years()
     if not years:

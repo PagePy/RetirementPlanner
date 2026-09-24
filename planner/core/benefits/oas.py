@@ -33,12 +33,17 @@ class OAS:
             amount *= (1.0 + p["uplift_75_plus"])
         return amount
 
-    def clawback(self, net_income: float, oas_received: float) -> float:
-        """Impôt de récupération de la SV selon le revenu net individuel."""
+    def clawback(self, net_income: float, oas_received: float,
+                 price_factor: float = 1.0) -> float:
+        """Impôt de récupération de la SV selon le revenu net individuel.
+
+        `price_factor` indexe le seuil au niveau des prix de l'année simulée.
+        """
         p = self.p
-        if net_income <= p["clawback_threshold"]:
+        threshold = p["clawback_threshold"] * price_factor
+        if net_income <= threshold:
             return 0.0
-        recovery = (net_income - p["clawback_threshold"]) * p["clawback_rate"]
+        recovery = (net_income - threshold) * p["clawback_rate"]
         return min(recovery, oas_received)
 
     @property

@@ -55,36 +55,46 @@ def estate_at_death(pr: PersonYearResult, calc: TaxCalculator) -> EstateResult:
 
 
 def estate_timeline(results: list[HouseholdYearResult],
-                    province: str = "QC") -> list[EstateResult]:
+                    province: str = "QC",
+                    inflation: float = 0.0) -> list[EstateResult]:
     """Succession nette du MÉNAGE année par année (si tous décédaient).
 
     Hypothèse: roulement au conjoint au premier décès, donc l'impôt est
     calculé comme si tout le patrimoine était imposé sur une seule
-    dernière déclaration (le survivant).
+    dernière déclaration (le survivant). `inflation` indexe les barèmes
+    de l'année de départ au niveau des prix de chaque année.
     """
     timeline = []
+    if not results:
+        return timeline
+    start_year = results[0].year
+    calc = TaxCalculator(year=start_year, province=province)
     for hr in results:
         alive = [p for p in hr.persons if p.alive]
         if not alive:
             break
-        calc = TaxCalculator(year=hr.year if hr.year <= 2100 else 2100,
-                             province=province)
+        pf = (1 + inflation) ** (hr.year - start_year)
         registered = sum(p.bal_reer + p.bal_cri + p.bal_ferr + p.bal_frv
                          for p in alive)
         gains = sum(p.taxable_unrealized_gain for p in alive) + hr.real_assets_gain
         gross = sum(p.wealth for p in alive) + hr.real_assets_value
-        # Tout imposé sur la déclaration du dernier survivant
+        # Tout imposé sur la déclaration du dernier survivant (récupération de
+        # DPA locative en revenu ordinaire)
         richest = max(alive, key=lambda p: p.taxable_income)
-        inp = TaxInput(year=calc.year, age=richest.age,
-                       ordinary_income=max(0.0, richest.taxable_income) + registered,
+        inp = TaxInput(year=hr.year, age=richest.age,
+                       ordinary_income=(max(0.0, richest.taxable_income) + registered
+                                        + hr.real_assets_recapture),
                        capital_gains=gains)
-        base = TaxInput(year=calc.year, age=richest.age,
+        base = TaxInput(year=hr.year, age=richest.age,
                         ordinary_income=max(0.0, richest.taxable_income))
-        death_tax = max(0.0, calc.compute(inp, _marginal_probe=False).total_tax
-                        - calc.compute(base, _marginal_probe=False).total_tax)
+        death_tax = max(
+            0.0,
+            calc.compute(inp, _marginal_probe=False, price_factor=pf).total_tax
+            - calc.compute(base, _marginal_probe=False, price_factor=pf).total_tax)
         timeline.append(EstateResult(
-            year=hr.year, gross_estate=gross,
+            year=hr.year, gross_estate=gross + hr.insurance_in_force,
             registered_income_at_death=registered, unrealized_gains=gains,
             tax_at_death=death_tax,
-            net_estate=gross - death_tax - hr.debts_balance))
+            # capitaux-décès en vigueur: libres d'impôt
+            net_estate=gross - death_tax - hr.debts_balance + hr.insurance_in_force))
     return timeline

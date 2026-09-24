@@ -1,6 +1,8 @@
 """Fonctions de calcul exécutées hors du thread UI (picklables pour run.cpu_bound)."""
 from planner.core.analysis import (
-    estate_timeline, run_all_stress_tests, run_monte_carlo, compare_strategies)
+    estate_timeline, run_all_stress_tests, run_monte_carlo, compare_strategies,
+    compare_income_floors)
+from planner.core.benefits.breakeven import standard_breakevens
 from planner.core.goals import (
     required_annual_savings, achievable_retirement_age,
     sustainable_income, financial_capacity, optimal_benefit_ages)
@@ -15,7 +17,7 @@ def simulate(hh, scen):
 
 def simulate_with_estate(hh, scen):
     results = HouseholdSimulator(hh, scen).run()
-    estates = estate_timeline(results, hh.province)
+    estates = estate_timeline(results, hh.province, scen.inflation)
     return results, estates
 
 
@@ -32,8 +34,16 @@ def strategy_comparison(hh, scen):
     return compare_strategies(hh, scen)
 
 
-def calculate_financial_capacity(hh, scen):
-    return financial_capacity(hh, scen)
+def income_floor_comparison(hh, scen):
+    return compare_income_floors(hh, scen)
+
+
+def calculate_financial_capacity(hh, scen, estate_goal=0.0):
+    return financial_capacity(hh, scen, estate_goal=estate_goal)
+
+
+def breakevens(monthly_at_65, year, residence_years=40):
+    return standard_breakevens(monthly_at_65, year, residence_years)
 
 
 def solve_goals(hh, scen):
