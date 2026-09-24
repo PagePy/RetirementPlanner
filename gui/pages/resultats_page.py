@@ -118,6 +118,8 @@ _COLUMN_TOOLTIPS = {
     "savings": "Cotisations de l'année durant l'accumulation : REER, CELI, "
                "CELIAPP, non-enr. et régime CD (incluant la part employeur).",
     "tax": "Impôts totaux + récupération de la SV pour l'année.",
+    "net": "Total net encaissé après impôts: revenus, retraits, SRG et crédits remboursables, "
+           "moins impôts et récupération SV (à comparer à la colonne Dépenses).",
     "expenses": "Cible de revenu net du ménage à financer (hors service de dette).",
     "shortfall": "Portion de la cible que le plan n'arrive PAS à financer.",
     "total_bal": "Somme de tous les comptes financiers à la fin de l'année.",
@@ -138,7 +140,8 @@ def _cash_flow_columns_with_balances(balance_fields):
             ("registered", "Enregistré"), ("celi", "CELI"),
             ("nonreg", "Non enregistré"), ("other", "SRG / crédits remb."),
             ("debt", "Dette / assur."), ("savings", "Épargne"),
-            ("tax", "Impôts + récup. SV"), ("expenses", "Dépenses"),
+            ("tax", "Impôts + récup. SV"), ("net", "Net encaissé"),
+            ("expenses", "Dépenses"),
             ("shortfall", "Insuffisances"),
         ]]
     columns += [{"name": field, "label": label, "field": field, "align": "right",
@@ -206,6 +209,7 @@ def _flow_values(persons) -> dict:
         "other": sum(p.gis + p.refundable_credits for p in persons),
         "savings": sum(_savings(p) for p in persons),
         "tax": sum(p.tax_total + p.oas_clawback for p in persons),
+        "net": sum(p.net_cash for p in persons),
     }
 
 
@@ -365,6 +369,9 @@ def build(state: dict):
                     "- **CELI / Non enregistré** : retraits de ces comptes.\n"
                     "- **SRG** : Supplément de revenu garanti reçu "
                     "(prestation non imposable, versée en sus de la cible).\n"
+                    "- **Net encaissé** : total après impôts de tous les revenus, "
+                    "retraits, SRG et crédits remboursables — c'est ce montant qui "
+                    "doit couvrir la colonne **Dépenses**.\n"
                     "- **Épargne** : cotisations de l'année (REER, CELI, "
                     "CELIAPP, non-enr., régime CD) durant l'accumulation.\n"
                     "- **Colonnes « Solde … »** : valeur de chaque compte à la "

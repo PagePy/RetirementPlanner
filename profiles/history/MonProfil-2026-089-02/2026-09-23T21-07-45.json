@@ -10,13 +10,10 @@
   "inflation": 2.0,
   "start_year": 2026,
   "use_spouse_age_for_ferr": false,
-  "rrq_sharing": false,
-  "rrq_share_fraction": 100.0,
-  "taxable_income_floor": null,
   "persons": [
     {
       "name": "Christian",
-      "birth_year": 1971.0,
+      "birth_year": 1985.0,
       "retirement_age": 57.0,
       "life_expectancy": 90.0,
       "salary": 157500.0,
@@ -49,9 +46,7 @@
         "frv_return": 4.0,
         "taxable_return": 4.0,
         "taxable_interest_ratio": 30.0,
-        "taxable_dividend_ratio": 30.0,
-        "fee_rate": 0.0,
-        "retirement_return_delta": 0.0
+        "taxable_dividend_ratio": 30.0
       },
       "contributions": {
         "reer_pct": 5.0,
@@ -66,19 +61,10 @@
         "dc_employer_pct": 8.0,
         "dc_employer_fixed": null,
         "celi_fixed_indexed": false,
-        "celi_overflow_to_taxable": true,
-        "spousal_reer_pct": 0.0,
-        "spousal_reer_fixed": 0.0
+        "celi_overflow_to_taxable": true
       },
       "db_status": "closed_salary_linked",
-      "db_active_growth": 3.0,
-      "retirement_month": 1,
-      "sex": "F",
-      "part_time_income": 0.0,
-      "part_time_until_age": 0,
-      "medical_expenses": 0.0,
-      "donations": 0.0,
-      "home_support_expenses": 0.0
+      "db_active_growth": 3.0
     },
     {
       "name": "Femme",
@@ -115,9 +101,7 @@
         "frv_return": 4.0,
         "taxable_return": 4.0,
         "taxable_interest_ratio": 30.0,
-        "taxable_dividend_ratio": 30.0,
-        "fee_rate": 0.0,
-        "retirement_return_delta": 0.0
+        "taxable_dividend_ratio": 30.0
       },
       "contributions": {
         "reer_pct": 3.0,
@@ -132,19 +116,10 @@
         "dc_employer_pct": null,
         "dc_employer_fixed": null,
         "celi_fixed_indexed": false,
-        "celi_overflow_to_taxable": true,
-        "spousal_reer_pct": 0.0,
-        "spousal_reer_fixed": 0.0
+        "celi_overflow_to_taxable": true
       },
       "db_status": "active",
-      "db_active_growth": 3.0,
-      "retirement_month": 1,
-      "sex": "F",
-      "part_time_income": 0.0,
-      "part_time_until_age": 0,
-      "medical_expenses": 0.0,
-      "donations": 0.0,
-      "home_support_expenses": 0.0
+      "db_active_growth": 3.0
     }
   ],
   "debts": [],
@@ -157,10 +132,7 @@
       "is_principal_residence": true,
       "cost_base": 130000.0,
       "sale_year": null,
-      "linked_debt": null,
-      "net_rental_income": null,
-      "cca_rate": null,
-      "ucc": null
+      "linked_debt": null
     }
   ],
   "vehicles": [
@@ -178,7 +150,5 @@
       "year": 2030,
       "amount": 10000.0
     }
-  ],
-  "annuities": [],
-  "life_insurances": []
+  ]
 }
