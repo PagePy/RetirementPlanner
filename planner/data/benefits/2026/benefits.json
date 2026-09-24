@@ -10,7 +10,8 @@
     "late_increase_per_month": 0.007,
     "reference_age": 65,
     "survivor_rate": 0.60,
-    "death_benefit": 2500
+    "death_benefit": 2500,
+    "mga": 74600
   },
   "oas": {
     "monthly_65_74": 749.65,

@@ -178,6 +178,39 @@ class TestSingle:
         assert r_active.db_pension == pytest.approx(18000.0 * (1.02 ** 5), rel=0.001)
         assert r_closed.db_pension == pytest.approx(18000.0 * (1.03 ** 5), rel=0.001)
 
+    def test_pd_actif_cesse_de_croitre_a_la_retraite(self):
+        person = single_person(
+            db_status="active", db_pension=20000.0,
+            db_start_age=65, db_normal_age=65, db_indexed=False,
+            db_active_growth=0.02, retirement_age=62,
+            accounts=AccountsConfig(celi_balance=10000.0),
+            contributions=ContributionsConfig(),
+        )
+        p65 = next(r.persons[0] for r in run_single(person) if r.persons[0].age == 65)
+        assert p65.db_pension == pytest.approx(20000.0 * (1.02 ** 2), rel=0.001)
+
+    def test_pd_ferme_cesse_de_croitre_a_la_retraite(self):
+        person = single_person(
+            db_status="closed_salary_linked", db_pension=18000.0,
+            db_start_age=65, db_normal_age=65, db_indexed=False,
+            salary_growth=0.03, retirement_age=62,
+            accounts=AccountsConfig(celi_balance=10000.0),
+            contributions=ContributionsConfig(),
+        )
+        p65 = next(r.persons[0] for r in run_single(person) if r.persons[0].age == 65)
+        assert p65.db_pension == pytest.approx(18000.0 * (1.03 ** 2), rel=0.001)
+
+    def test_pd_croissance_au_prorata_du_mois_de_retraite(self):
+        person = single_person(
+            db_status="active", db_pension=20000.0,
+            db_start_age=65, db_normal_age=65, db_indexed=False,
+            db_active_growth=0.02, retirement_age=62, retirement_month=7,
+            accounts=AccountsConfig(celi_balance=10000.0),
+            contributions=ContributionsConfig(),
+        )
+        p65 = next(r.persons[0] for r in run_single(person) if r.persons[0].age == 65)
+        assert p65.db_pension == pytest.approx(20000.0 * (1.02 ** 2.5), rel=0.001)
+
     def test_pd_differe_reste_gele_jusqu_au_debut(self):
         person = single_person(
             db_status="deferred", db_pension=18000.0,
@@ -293,6 +326,144 @@ class TestSingle:
         # conversion en début d'année (10 000), puis cotisation CD dans le CRI (5 000)
         assert p0.bal_frv == pytest.approx(10000.0, rel=0.001)
         assert p0.bal_cri == pytest.approx(5000.0, rel=0.001)
+
+
+def _statement_person(**overrides) -> PersonConfig:
+    """Née en 1966 (60 ans en 2026), retraite en janvier 2031, relevé: 10 ans de service."""
+    defaults = dict(
+        db_status="active", db_pension=0.0, db_start_age=65, db_normal_age=65,
+        db_indexed=False, salary=100000.0, salary_growth=0.03, retirement_age=65,
+        db_service_years=10.0, db_avg_salary=90000.0,
+        accounts=AccountsConfig(celi_balance=10000.0),
+        contributions=ContributionsConfig(),
+    )
+    defaults.update(overrides)
+    return single_person(**defaults)
+
+
+def _pd_at(person: PersonConfig, age: int) -> float:
+    return next(r.persons[0] for r in run_single(person)
+                if r.persons[0].age == age).db_pension
+
+
+def _avg(values) -> float:
+    values = list(values)
+    return sum(values) / len(values)
+
+
+class TestPDReleve:
+    AVG_2028_2030 = _avg(100000.0 * 1.03 ** k for k in (2, 3, 4))
+    MGA_2028_2030 = _avg(74600.0 * 1.02 ** k for k in (2, 3, 4))
+
+    def test_formule_service_taux_moyenne_3_dernieres_annees(self):
+        assert _pd_at(_statement_person(), 65) == pytest.approx(
+            0.02 * 15 * self.AVG_2028_2030, rel=1e-6)
+
+    def test_moyenne_sur_5_ans(self):
+        avg5 = _avg(100000.0 * 1.03 ** k for k in range(5))
+        assert _pd_at(_statement_person(db_avg_years=5), 65) == pytest.approx(
+            0.02 * 15 * avg5, rel=1e-6)
+
+    def test_service_plafonne(self):
+        person = _statement_person(db_service_years=33.0, db_max_service=35.0)
+        assert _pd_at(person, 65) == pytest.approx(0.02 * 35 * self.AVG_2028_2030, rel=1e-6)
+
+    def test_service_au_prorata_du_mois_de_retraite(self):
+        # Retraite en juillet 2028: 2,5 ans de service de plus, fenêtre 2025-2027
+        person = _statement_person(retirement_age=62, retirement_month=7)
+        avg = _avg(100000.0 * 1.03 ** k for k in (-1, 0, 1))
+        assert _pd_at(person, 65) == pytest.approx(0.02 * 12.5 * avg, rel=1e-6)
+
+    def test_retraite_immediate_utilise_moyenne_du_releve(self):
+        person = _statement_person(retirement_age=60)
+        assert _pd_at(person, 65) == pytest.approx(0.02 * 10 * 90000.0, rel=1e-6)
+
+    def test_penalite_anticipee_appliquee(self):
+        person = _statement_person(db_normal_age=67, db_penalty_per_year=0.04)
+        assert _pd_at(person, 65) == pytest.approx(
+            0.02 * 15 * self.AVG_2028_2030 * (1 - 2 * 0.04), rel=1e-6)
+
+    def test_coordination_taux_reduit_sous_mga(self):
+        person = _statement_person(db_coordination="step")
+        expected = 15 * (0.015 * self.MGA_2028_2030
+                         + 0.02 * (self.AVG_2028_2030 - self.MGA_2028_2030))
+        assert _pd_at(person, 65) == pytest.approx(expected, rel=1e-6)
+
+    def test_coordination_reduction_a_65_ans(self):
+        # Retraite et début à 62 ans (2028): fenêtre 2025-2027, service 12
+        person = _statement_person(db_coordination="bridge", retirement_age=62,
+                                   db_start_age=62, db_normal_age=62)
+        avg = _avg(100000.0 * 1.03 ** k for k in (-1, 0, 1))
+        mga = _avg(74600.0 * 1.02 ** k for k in (-1, 0, 1))
+        full = 0.02 * 12 * avg
+        assert _pd_at(person, 64) == pytest.approx(full, rel=1e-6)
+        assert _pd_at(person, 65) == pytest.approx(full - 0.007 * 12 * mga, rel=1e-6)
+
+    def test_releve_vide_garde_ancien_calcul(self):
+        person = _statement_person(db_service_years=0.0, db_pension=20000.0,
+                                   db_active_growth=0.02)
+        assert _pd_at(person, 65) == pytest.approx(20000.0 * 1.02 ** 5, rel=1e-6)
+
+    def test_releve_ignore_si_statut_ferme(self):
+        person = _statement_person(db_status="closed_salary_linked", db_pension=18000.0)
+        assert _pd_at(person, 65) == pytest.approx(18000.0 * 1.03 ** 5, rel=1e-6)
+
+    def test_mois_travailles_l_annee_du_debut_ajoutes_au_service(self):
+        person = _statement_person(retirement_month=7)
+        assert _pd_at(person, 65) == pytest.approx(0.02 * 15.5 * self.AVG_2028_2030 * 0.5,
+                                                   rel=1e-6)
+        assert _pd_at(person, 66) == pytest.approx(0.02 * 15.5 * self.AVG_2028_2030, rel=1e-6)
+
+
+def _by_age(person: PersonConfig) -> dict:
+    return {r.persons[0].age: r.persons[0] for r in run_single(person)}
+
+
+class TestMoisDeNaissance:
+    """Née en juin 1966: retraite, RRQ, SV et PD débutent le 1er juillet."""
+
+    def test_retraite_le_mois_suivant_l_anniversaire(self):
+        p = _by_age(single_person(birth_month=6))
+        assert p[65].salary == pytest.approx(p[64].salary * 1.02 * 6 / 12, rel=1e-6)
+        assert p[66].salary == 0.0
+
+    def test_mois_de_depart_choisi_remplace_l_anniversaire(self):
+        p = _by_age(single_person(birth_month=6, retirement_month=10))
+        assert p[65].salary == pytest.approx(p[64].salary * 1.02 * 9 / 12, rel=1e-6)
+        p = _by_age(single_person(birth_month=6, retirement_month=1))
+        assert p[65].salary == 0.0
+
+    def test_rente_pd_debute_au_mois_de_depart_choisi(self):
+        person = _statement_person(birth_month=6, retirement_month=10)
+        avg = TestPDReleve.AVG_2028_2030
+        assert _pd_at(person, 65) == pytest.approx(0.02 * 15.75 * avg * 3 / 12, rel=1e-6)
+        assert _pd_at(person, 66) == pytest.approx(0.02 * 15.75 * avg, rel=1e-6)
+
+    def test_anniversaire_en_decembre_travaille_toute_l_annee(self):
+        p = _by_age(single_person(birth_month=12))
+        assert p[65].salary == pytest.approx(p[64].salary * 1.02, rel=1e-6)
+        assert p[66].salary == 0.0
+
+    def test_premiere_annee_rrq_et_sv_au_prorata(self):
+        p = _by_age(single_person(birth_month=9, retirement_age=62))
+        assert p[65].rrq == pytest.approx(p[66].rrq / 1.02 * 3 / 12, rel=1e-6)
+        assert p[65].oas == pytest.approx(p[66].oas / 1.02 * 3 / 12, rel=1e-6)
+
+    def test_sans_mois_de_naissance_rrq_complete_des_janvier(self):
+        p = _by_age(single_person(retirement_age=62))
+        assert p[65].rrq == pytest.approx(p[66].rrq / 1.02, rel=1e-6)
+
+    def test_rente_pd_releve_avec_mois_de_naissance(self):
+        person = _statement_person(birth_month=6)
+        avg = TestPDReleve.AVG_2028_2030
+        assert _pd_at(person, 65) == pytest.approx(0.02 * 15.5 * avg * 0.5, rel=1e-6)
+        assert _pd_at(person, 66) == pytest.approx(0.02 * 15.5 * avg, rel=1e-6)
+
+    def test_rente_pd_debut_apres_retraite_versee_des_juillet(self):
+        person = _statement_person(birth_month=6, retirement_age=62)
+        avg = _avg(100000.0 * 1.03 ** k for k in (-1, 0, 1))
+        assert _pd_at(person, 65) == pytest.approx(0.02 * 12.5 * avg * 0.5, rel=1e-6)
+        assert _pd_at(person, 66) == pytest.approx(0.02 * 12.5 * avg, rel=1e-6)
 
 
 class TestCotisationsCELI:

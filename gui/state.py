@@ -1,7 +1,7 @@
 """État de l'application et gestion des profils (sauvegarde/chargement/migration)."""
 import json
 import re
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from planner.core.simulation import (
@@ -29,13 +29,34 @@ def _coerce_float(value, default: float = 0.0) -> float:
     return default if value in (None, "") else float(value)
 
 
+def parse_birth_date(value) -> date | None:
+    """Date de naissance AAAA-MM-JJ; None si vide ou invalide."""
+    try:
+        return date.fromisoformat(str(value)) if value else None
+    except ValueError:
+        return None
+
+
 def _normalize_db_status(value: str | None, db_pension: float) -> str:
     if value in {"none", "active", "deferred", "closed_salary_linked", "in_payment"}:
         return value
     return "active" if db_pension > 0 else "none"
 
 
+# Relevé annuel du régime PD actif (pourcentages en %, comme dans l'interface)
+DB_STATEMENT_DEFAULTS = {
+    "db_service_years": 0.0, "db_avg_salary": 0.0, "db_accrual_rate": 2.0,
+    "db_avg_years": 3, "db_max_service": 35.0, "db_coordination": "none",
+    "db_rate_below_mga": 1.5, "db_bridge_rate": 0.7,
+}
+
+
 def _normalize_person_state(person: dict) -> None:
+    person.setdefault("birth_date", "")
+    person.setdefault("retirement_start_month", 0)
+    birth = parse_birth_date(person["birth_date"])
+    if birth:
+        person["birth_year"] = birth.year
     person.setdefault("db_indexed", True)
     person.setdefault("retirement_month", 1)
     person.setdefault("sex", "F")
@@ -44,6 +65,8 @@ def _normalize_person_state(person: dict) -> None:
     person.setdefault("medical_expenses", 0.0)
     person.setdefault("donations", 0.0)
     person.setdefault("home_support_expenses", 0.0)
+    for key, value in DB_STATEMENT_DEFAULTS.items():
+        person.setdefault(key, value)
     accounts = person.setdefault("accounts", {})
     accounts.setdefault("fee_rate", 0.0)
     accounts.setdefault("retirement_return_delta", 0.0)
@@ -61,14 +84,15 @@ def _normalize_person_state(person: dict) -> None:
 
 def default_person(name: str = "") -> dict:
     return {
-        "name": name, "birth_year": 1970, "retirement_age": 65,
-        "retirement_month": 1, "sex": "F",
+        "name": name, "birth_date": "", "birth_year": 1970, "retirement_age": 65,
+        "retirement_month": 1, "retirement_start_month": 0, "sex": "F",
         "life_expectancy": 92, "salary": 70000.0, "salary_growth": 2.0,
         "part_time_income": 0.0, "part_time_until_age": 0,
         "medical_expenses": 0.0, "donations": 0.0, "home_support_expenses": 0.0,
         "db_status": "none",
         "db_pension": 0.0, "db_start_age": 65, "db_normal_age": 65,
         "db_penalty": 6.0, "db_indexed": True, "db_active_growth": 2.0,
+        **DB_STATEMENT_DEFAULTS,
         "rrq_monthly_at_65": 1000.0, "rrq_start_age": 65,
         "oas_start_age": 65, "oas_residence_years": 40,
         "accounts": {
@@ -107,6 +131,7 @@ def default_state() -> dict:
         "celi_strategy": "dernier",
         "inflation": 2.0,
         "start_year": 2026,
+        "hide_data_warning": False,
         "use_spouse_age_for_ferr": False,
         "rrq_sharing": False,
         "rrq_share_fraction": 100.0,
@@ -126,10 +151,14 @@ def default_state() -> dict:
 def _person_config(p: dict) -> PersonConfig:
     a, c = p["accounts"], p["contributions"]
     db_pension = _coerce_float(p.get("db_pension"))
+    birth = parse_birth_date(p.get("birth_date"))
     return PersonConfig(
-        name=p["name"], birth_year=int(p["birth_year"]),
+        name=p["name"], birth_year=birth.year if birth else int(p["birth_year"]),
+        birth_month=birth.month if birth else 0,
         retirement_age=int(p["retirement_age"]),
-        retirement_month=int(p.get("retirement_month") or 1),
+        # Avec date de naissance: 0 = auto (mois suivant l'anniversaire)
+        retirement_month=(int(p.get("retirement_start_month") or 0) if birth
+                          else int(p.get("retirement_month") or 1)),
         life_expectancy=int(p["life_expectancy"]),
         sex=p.get("sex") or "F",
         salary=float(p["salary"]), salary_growth=float(p["salary_growth"]) / 100,
@@ -144,6 +173,14 @@ def _person_config(p: dict) -> PersonConfig:
         db_penalty_per_year=float(p["db_penalty"]) / 100,
         db_indexed=bool(p.get("db_indexed", True)),
         db_active_growth=_coerce_float(p.get("db_active_growth")) / 100,
+        db_service_years=_coerce_float(p.get("db_service_years")),
+        db_avg_salary=_coerce_float(p.get("db_avg_salary")),
+        db_accrual_rate=_coerce_float(p.get("db_accrual_rate"), 2.0) / 100,
+        db_avg_years=int(p.get("db_avg_years") or 3),
+        db_max_service=_coerce_float(p.get("db_max_service")),
+        db_coordination=p.get("db_coordination") or "none",
+        db_rate_below_mga=_coerce_float(p.get("db_rate_below_mga"), 1.5) / 100,
+        db_bridge_rate=_coerce_float(p.get("db_bridge_rate"), 0.7) / 100,
         rrq_monthly_at_65=float(p["rrq_monthly_at_65"]),
         rrq_start_age=int(p["rrq_start_age"]),
         oas_start_age=int(p["oas_start_age"]),

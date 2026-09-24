@@ -88,8 +88,7 @@
       "db_coordination": "none",
       "db_rate_below_mga": 1.5,
       "db_bridge_rate": 0.7,
-      "birth_date": "1971-07-16",
-      "retirement_start_month": 0
+      "birth_date": "1971-07-16"
     },
     {
       "name": "Femme",
@@ -164,8 +163,7 @@
       "db_coordination": "none",
       "db_rate_below_mga": 1.5,
       "db_bridge_rate": 0.7,
-      "birth_date": "1970-10-26",
-      "retirement_start_month": 0
+      "birth_date": "1970-10-26"
     }
   ],
   "debts": [],

@@ -4,12 +4,11 @@
   "is_couple": true,
   "persons_side_by_side": true,
   "province": "QC",
-  "target_net_income": 110000.0,
+  "target_net_income": 100000.0,
   "target_indexed": true,
   "celi_strategy": "dernier",
   "inflation": 2.0,
   "start_year": 2026,
-  "hide_data_warning": true,
   "use_spouse_age_for_ferr": false,
   "rrq_sharing": false,
   "rrq_share_fraction": 100.0,
@@ -17,8 +16,8 @@
   "persons": [
     {
       "name": "Christian",
-      "birth_year": 1971,
-      "retirement_age": 57.0,
+      "birth_year": 1971.0,
+      "retirement_age": 55.0,
       "life_expectancy": 92.0,
       "salary": 157500.0,
       "salary_growth": 3.0,
@@ -79,21 +78,11 @@
       "part_time_until_age": 0,
       "medical_expenses": 0.0,
       "donations": 0.0,
-      "home_support_expenses": 0.0,
-      "db_service_years": 0.0,
-      "db_avg_salary": 0.0,
-      "db_accrual_rate": 2.0,
-      "db_avg_years": 3,
-      "db_max_service": 35.0,
-      "db_coordination": "none",
-      "db_rate_below_mga": 1.5,
-      "db_bridge_rate": 0.7,
-      "birth_date": "1971-07-16",
-      "retirement_start_month": 0
+      "home_support_expenses": 0.0
     },
     {
       "name": "Femme",
-      "birth_year": 1970,
+      "birth_year": 1970.0,
       "retirement_age": 61.0,
       "life_expectancy": 94.0,
       "salary": 87000.0,
@@ -155,17 +144,7 @@
       "part_time_until_age": 0,
       "medical_expenses": 0.0,
       "donations": 0.0,
-      "home_support_expenses": 0.0,
-      "db_service_years": 8.91,
-      "db_avg_salary": 82188.0,
-      "db_accrual_rate": 2.0,
-      "db_avg_years": 3,
-      "db_max_service": 35.0,
-      "db_coordination": "none",
-      "db_rate_below_mga": 1.5,
-      "db_bridge_rate": 0.7,
-      "birth_date": "1970-10-26",
-      "retirement_start_month": 0
+      "home_support_expenses": 0.0
     }
   ],
   "debts": [],
@@ -187,7 +166,7 @@
   "vehicles": [
     {
       "name": "Auto",
-      "first_year": 2031.0,
+      "first_year": 2030,
       "every_years": 10.0,
       "net_cost": 60000.0,
       "last_year": null

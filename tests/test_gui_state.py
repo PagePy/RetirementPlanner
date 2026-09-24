@@ -63,6 +63,103 @@ class TestHistorique:
         s = state.default_state()
         assert state.diff_states(s, state.default_state()) == []
 
+    def test_warning_hidden_persists_in_state(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(state, "PROFILES_DIR", tmp_path)
+        s = state.default_state()
+        assert s.get("hide_data_warning") is False
+        s["hide_data_warning"] = True
+        state.save_profile(s)
+        loaded = state.load_profile(s["profile_name"])
+        assert loaded["hide_data_warning"] is True
+
+
+class TestRelevePD:
+    def test_ancien_profil_recoit_valeurs_par_defaut(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(state, "PROFILES_DIR", tmp_path)
+        s = state.default_state()
+        s["profile_name"] = "Ancien"
+        for key in state.DB_STATEMENT_DEFAULTS:
+            del s["persons"][0][key]
+        state.save_profile(s)
+        person = state.load_profile("Ancien")["persons"][0]
+        assert person["db_service_years"] == 0.0
+        assert person["db_coordination"] == "none"
+        hh, _ = state.to_configs(state.load_profile("Ancien"))
+        assert not hh.persons[0].db_from_statement
+
+    def test_conversion_des_pourcentages(self):
+        s = state.default_state()
+        s["persons"][0].update(db_status="active", db_service_years=12.5,
+                               db_avg_salary=80000.0, db_accrual_rate=1.8,
+                               db_avg_years=5, db_coordination="bridge",
+                               db_bridge_rate=0.7)
+        cfg = state.to_configs(s)[0].persons[0]
+        assert cfg.db_from_statement
+        assert cfg.db_accrual_rate == pytest.approx(0.018)
+        assert cfg.db_bridge_rate == pytest.approx(0.007)
+        assert cfg.db_avg_years == 5 and cfg.db_coordination == "bridge"
+
+    def test_pdf_avec_releve(self):
+        from gui import compute, report
+        s = state.default_state()
+        s["persons"][0].update(db_status="active", db_service_years=10.0,
+                               db_avg_salary=70000.0)
+        hh, scen = state.to_configs(s)
+        results, estates = compute.simulate_with_estate(hh, scen)
+        assert report.build_pdf(s, hh, scen, results, estates)[:5] == b"%PDF-"
+
+
+class TestDateDeNaissance:
+    def test_date_donne_annee_et_mois(self):
+        s = state.default_state()
+        s["persons"][0].update(birth_date="1970-06-15", birth_year=1900)
+        cfg = state.to_configs(s)[0].persons[0]
+        assert (cfg.birth_year, cfg.birth_month) == (1970, 6)
+        assert cfg.retirement_month == 0  # auto
+
+    def test_mois_de_depart_choisi_avec_date(self):
+        s = state.default_state()
+        s["persons"][0].update(birth_date="1970-06-15", retirement_month=3,
+                               retirement_start_month=10)
+        assert state.to_configs(s)[0].persons[0].retirement_month == 10
+
+    def test_sans_date_garde_ancien_mois_de_depart(self):
+        s = state.default_state()
+        s["persons"][0].update(birth_date="", retirement_month=7,
+                               retirement_start_month=10)
+        assert state.to_configs(s)[0].persons[0].retirement_month == 7
+
+    @pytest.mark.parametrize("value", ["", None, "1970-13-01", "pas une date"])
+    def test_date_vide_ou_invalide_garde_l_annee(self, value):
+        s = state.default_state()
+        s["persons"][0].update(birth_date=value, birth_year=1968)
+        cfg = state.to_configs(s)[0].persons[0]
+        assert (cfg.birth_year, cfg.birth_month) == (1968, 0)
+
+    def test_chargement_synchronise_l_annee(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(state, "PROFILES_DIR", tmp_path)
+        s = state.default_state()
+        s["profile_name"] = "Date"
+        s["persons"][0].update(birth_date="1971-03-02", birth_year=1970)
+        state.save_profile(s)
+        assert state.load_profile("Date")["persons"][0]["birth_year"] == 1971
+
+    def test_ancien_profil_sans_date(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(state, "PROFILES_DIR", tmp_path)
+        s = state.default_state()
+        s["profile_name"] = "SansDate"
+        del s["persons"][0]["birth_date"]
+        state.save_profile(s)
+        assert state.load_profile("SansDate")["persons"][0]["birth_date"] == ""
+
+    def test_pdf_avec_date(self):
+        from gui import compute, report
+        s = state.default_state()
+        s["persons"][0]["birth_date"] = "1970-06-15"
+        hh, scen = state.to_configs(s)
+        results, estates = compute.simulate_with_estate(hh, scen)
+        assert report.build_pdf(s, hh, scen, results, estates)[:5] == b"%PDF-"
+
 
 class TestRapportPDF:
     def test_pdf_genere(self):

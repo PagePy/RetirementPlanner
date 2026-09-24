@@ -153,17 +153,28 @@ def build_app():
 
     def _warning(start_year) -> str:
         try:
+            if app_state.get("hide_data_warning", False):
+                return ""
             return warning_message(int(start_year or 0), app_state.get("province", "QC"))
         except Exception:
             log.exception("Statut des paramètres indisponible")
             return ""
 
+    def dismiss_warning():
+        app_state["hide_data_warning"] = True
+        banner.visible = False
+
     with ui.row().classes("w-full items-center gap-2 bg-orange-1 text-orange-10 "
                           "px-4 py-2 text-sm") as banner:
         ui.icon("warning").classes("text-lg")
         ui.label().bind_text_from(app_state, "start_year", backward=_warning)
+        ui.button(icon="close", on_click=dismiss_warning).props("flat dense round")
+
+    def _show_warning_banner(y: int) -> bool:
+        return bool(_warning(y)) and not app_state.get("hide_data_warning", False)
+
     banner.bind_visibility_from(app_state, "start_year",
-                                backward=lambda y: bool(_warning(y)))
+                                backward=_show_warning_banner)
 
     render_pages()
 

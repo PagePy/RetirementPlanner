@@ -3,6 +3,7 @@ from contextlib import contextmanager
 
 from nicegui import ui
 
+from gui import state as state_mod
 from planner.core.accounts.celi import cumulative_room
 from planner.core.assumptions import load_iqpf, portfolio_return, portfolio_labels
 
@@ -14,6 +15,35 @@ DB_STATUS_LABELS = {
     "closed_salary_linked": "PD fermé, emploi toujours actif",
     "in_payment": "PD déjà en paiement",
 }
+
+DB_COORDINATION_LABELS = {
+    "none": "Aucune",
+    "step": "Taux réduit sous le MGA",
+    "bridge": "Réduction de la rente à 65 ans",
+}
+
+MONTHS_FR = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+             "août", "septembre", "octobre", "novembre", "décembre")
+
+
+def _has_birth(value) -> bool:
+    return state_mod.parse_birth_date(value) is not None
+
+
+def _retirement_text(p: dict) -> str:
+    birth = state_mod.parse_birth_date(p.get("birth_date"))
+    if not birth:
+        return ""
+    year = birth.year + int(p.get("retirement_age") or 0)
+    month = int(p.get("retirement_start_month") or 0)
+    if not month:
+        year += birth.month // 12
+        month = birth.month % 12 + 1
+    return f"Retraite le 1er {MONTHS_FR[month - 1]} {year}"
+
+
+RETIREMENT_MONTH_OPTIONS = {0: "Auto (mois suivant l'anniversaire)",
+                            **{i + 1: m.capitalize() for i, m in enumerate(MONTHS_FR)}}
 
 
 def _num(container_dict: dict, key: str, label: str, **kwargs):
@@ -60,13 +90,50 @@ def _person_form(p: dict, title: str, state: dict):
                 ui.select({"F": "Femme", "M": "Homme"}, label="Sexe") \
                     .bind_value(p, "sex").props("dense outlined").classes("w-28") \
                     .tooltip("Sert aux tables de longévité (onglet Analyses).")
-                _num(p, "birth_year", "Année de naissance", min=1900, max=2100)
-                _num(p, "retirement_age", "Âge de retraite", max=110)
+                with ui.input("Date de naissance", placeholder="AAAA-MM-JJ") \
+                        .bind_value(p, "birth_date").props("dense outlined") \
+                        .classes("w-44") as birth_input:
+                    with ui.menu().props("no-parent-event") as birth_menu:
+                        with ui.date(mask="YYYY-MM-DD").bind_value(birth_input):
+                            with ui.row().classes("justify-end"):
+                                ui.button("OK", on_click=birth_menu.close).props("flat")
+                    with birth_input.add_slot("append"):
+                        ui.icon("edit_calendar").on("click", birth_menu.open) \
+                            .classes("cursor-pointer")
+                birth_input.tooltip("La RRQ, la SV et la rente PD débutent le 1er du mois "
+                                    "suivant l'anniversaire.")
+                _num(p, "birth_year", "Année de naissance", min=1900, max=2100) \
+                    .bind_visibility_from(p, "birth_date", backward=lambda v: not _has_birth(v))
+                age_input = _num(p, "retirement_age", "Âge de retraite", max=110)
                 _num(p, "retirement_month", "Mois de départ (1-12)", min=1, max=12) \
                     .tooltip("1 = retraité toute l'année de l'âge indiqué; 7 = travaille "
                              "de janvier à juin puis retraité (salaire, cotisations et "
-                             "cible au prorata).")
+                             "cible au prorata).") \
+                    .bind_visibility_from(p, "birth_date", backward=lambda v: not _has_birth(v))
+                month_select = ui.select(RETIREMENT_MONTH_OPTIONS, label="Mois de départ") \
+                    .bind_value(p, "retirement_start_month").props("dense outlined") \
+                    .classes("w-64") \
+                    .tooltip("Retraite le 1er du mois choisi, l'année de l'âge de retraite "
+                             "(Janvier = retraité toute l'année). La RRQ et la SV débutent "
+                             "toujours le mois suivant l'anniversaire.") \
+                    .bind_visibility_from(p, "birth_date", backward=_has_birth)
                 _num(p, "life_expectancy", "Espérance de vie", max=120)
+            retirement_label = ui.label().classes("text-sm text-grey-7")
+            ui.label("Entrez la date de naissance pour dater précisément la retraite et le "
+                     "début des prestations (sinon: année et mois de départ ci-dessus).") \
+                .classes("text-xs text-orange-10") \
+                .bind_visibility_from(p, "birth_date", backward=lambda v: not _has_birth(v))
+
+            def on_birth_change(_=None):
+                birth = state_mod.parse_birth_date(p.get("birth_date"))
+                if birth:
+                    p["birth_year"] = birth.year
+                retirement_label.text = _retirement_text(p)
+
+            birth_input.on_value_change(on_birth_change)
+            age_input.on_value_change(on_birth_change)
+            month_select.on_value_change(on_birth_change)
+            on_birth_change()
             with ui.row().classes("gap-4 flex-wrap"):
                 _num(p, "salary", "Salaire annuel ($)")
                 _pct(p, "salary_growth", "Croissance salaire")
@@ -217,8 +284,8 @@ def _person_form(p: dict, title: str, state: dict):
                     .classes("w-full max-w-3xl text-sm"):
                 ui.label("Aucun régime PD: la personne n'a pas de rente à prestations "
                          "déterminées à recevoir.")
-                ui.label("PD actif: la personne participe toujours au régime; sa rente "
-                         "continue d'augmenter grâce au service et/ou au salaire.")
+                ui.label("PD actif: la rente est calculée à partir du relevé annuel "
+                         "(taux d'acquisition × années de service × salaire moyen).")
                 ui.label("PD différé ou gelé: la personne a quitté l'employeur ou le "
                          "régime est fermé; la rente accumulée n'augmente plus avant son "
                          "début, sauf règle d'indexation particulière du régime.")
@@ -228,17 +295,74 @@ def _person_form(p: dict, title: str, state: dict):
                 ui.label("PD déjà en paiement: la personne reçoit déjà cette rente. Entrez "
                          "le montant annuel reçu aujourd'hui; aucune pénalité anticipée n'est "
                          "appliquée.")
-                ui.label("Croissance PD active sert seulement au statut PD actif. Pour le "
-                         "statut fermé avec emploi actif, le logiciel utilise plutôt la "
-                         "croissance du salaire.").classes("text-gray-600")
+                ui.label("Pour le statut fermé avec emploi actif, la rente estimée croît "
+                         "avec la croissance du salaire.").classes("text-gray-600")
+                ui.label("La rente augmente seulement pendant les années travaillées: si "
+                         "son début est reporté après la retraite, elle reste gelée "
+                         "entre la retraite et son début.").classes("text-gray-600")
+
+            def is_active(status) -> bool:
+                return status == "active"
+
+            with ui.column().classes("w-full gap-2") as statement:
+                ui.label("Relevé annuel du régime (au 31 décembre de l'année précédente)") \
+                    .classes("text-sm font-medium text-grey-8")
+                ui.label("Rente = taux d'acquisition × années de service × salaire moyen "
+                         "des dernières années avant la retraite.") \
+                    .classes("text-xs text-gray-500")
+                with ui.row().classes("gap-4 flex-wrap items-center"):
+                    _num(p, "db_avg_salary", "Salaire moyen du relevé ($)")
+                    ui.number("Années de service", format="%.2f", min=0) \
+                        .bind_value(p, "db_service_years") \
+                        .props("dense outlined").classes("w-40")
+                    ui.select({3: "3 dernières années", 5: "5 dernières années"},
+                              label="Moyenne salariale") \
+                        .bind_value(p, "db_avg_years").props("dense outlined") \
+                        .classes("w-44")
+                    _pct(p, "db_accrual_rate", "Taux d'acquisition/an")
+                    _num(p, "db_max_service", "Service maximal (ans)", max=60) \
+                        .tooltip("0 = aucun plafond")
+                ui.label().classes("text-xs text-orange-10") \
+                    .bind_text_from(p, "db_pension", backward=lambda v: (
+                        "Relevé non saisi: l'ancienne rente estimée du profil "
+                        f"({(v or 0):,.0f} $) et sa croissance sont utilisées en attendant.")
+                                    .replace(",", " ")) \
+                    .bind_visibility_from(p, "db_service_years", backward=lambda v: not v)
+            statement.bind_visibility_from(p, "db_status", backward=is_active)
+
             with ui.row().classes("gap-4 flex-wrap items-center"):
-                _num(p, "db_pension", "Rente annuelle estimée ($)")
+                _num(p, "db_pension", "Rente annuelle estimée ($)") \
+                    .bind_visibility_from(p, "db_status", backward=lambda s: not is_active(s))
+                _pct(p, "db_penalty", "Pénalité/an anticipé")
                 _num(p, "db_start_age", "Âge de début", max=110)
                 _num(p, "db_normal_age", "Âge normal (sans pénalité)", max=110)
-                _pct(p, "db_penalty", "Pénalité/an anticipé")
-                _pct(p, "db_active_growth", "Croissance PD active")
                 ui.checkbox("Rente indexée une fois en paiement") \
                     .bind_value(p, "db_indexed")
+
+            with ui.column().classes("w-full gap-2") as coordination:
+                with ui.row().classes("gap-4 flex-wrap items-center"):
+                    ui.select(DB_COORDINATION_LABELS, label="Coordination avec la RRQ") \
+                        .bind_value(p, "db_coordination").props("dense outlined") \
+                        .classes("w-80")
+                    _pct(p, "db_rate_below_mga", "Taux sous le MGA") \
+                        .bind_visibility_from(p, "db_coordination",
+                                              backward=lambda v: v == "step")
+                    _pct(p, "db_bridge_rate", "Réduction à 65 ans (taux)") \
+                        .bind_visibility_from(p, "db_coordination",
+                                              backward=lambda v: v == "bridge")
+                with ui.expansion("Qu'est-ce que la coordination avec la RRQ ?",
+                                  icon="help_outline").classes("w-full max-w-3xl text-sm"):
+                    ui.label("Certains régimes réduisent la rente pour tenir compte de la "
+                             "RRQ. Le relevé ou le texte du régime le mentionne alors "
+                             "(« rente coordonnée », « MGA », « réduction à 65 ans »). "
+                             "Sinon, choisissez « Aucune ».")
+                    ui.label("Taux réduit sous le MGA: un taux plus bas (ex. 1,5 %) "
+                             "s'applique sur la portion du salaire moyen sous le maximum "
+                             "des gains admissibles (MGA), et le taux normal au-dessus.")
+                    ui.label("Réduction à 65 ans: la rente complète est versée jusqu'à "
+                             "65 ans, puis elle diminue (ex. 0,7 % × service × salaire "
+                             "moyen, limité au MGA moyen) lorsque la RRQ prend le relais.")
+            coordination.bind_visibility_from(p, "db_status", backward=is_active)
 
         with _section("Régime CD (alimente le CRI unique)", "domain"):
             ui.label("Les cotisations en % sont recalculées chaque année sur le "

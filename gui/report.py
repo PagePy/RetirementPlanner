@@ -90,8 +90,12 @@ def _assumptions(state: dict, hh, scen) -> list:
     for p in hh.persons:
         a = p.accounts
         rows = [["Paramètre", "Valeur"],
-                ["Naissance / retraite", f"{p.birth_year} / {p.retirement_age} ans"
-                 + (f" (mois {p.retirement_month})" if p.retirement_month > 1 else "")],
+                ["Naissance / retraite",
+                 (f"{p.birth_month:02d}/{p.birth_year} / {p.retirement_age} ans"
+                  + (f" (départ mois {p.retirement_month})" if p.retirement_month else "")
+                  if p.birth_month else
+                  f"{p.birth_year} / {p.retirement_age} ans"
+                  + (f" (mois {p.retirement_month})" if p.retirement_month > 1 else ""))],
                 ["Espérance de vie", f"{p.life_expectancy} ans"],
                 ["Salaire / croissance", f"{_fmt(p.salary)} / {_pct(p.salary_growth)}"],
                 ["RRQ à 65 ans / début", f"{_fmt(p.rrq_monthly_at_65)} par mois / {p.rrq_start_age} ans"],
@@ -103,7 +107,12 @@ def _assumptions(state: dict, hh, scen) -> list:
                 ["Soldes REER / CELI / CRI / non-enr.",
                  f"{_fmt(a.reer_balance)} / {_fmt(a.celi_balance)} / "
                  f"{_fmt(a.cri_balance)} / {_fmt(a.taxable_balance)}"]]
-        if p.db_pension > 0:
+        if p.db_from_statement:
+            rows.append(["Rente PD (relevé)",
+                         f"{_pct(p.db_accrual_rate)} × {p.db_service_years:.2f} ans de service "
+                         f"× moyenne {p.db_avg_years} ans (relevé: {_fmt(p.db_avg_salary)}), "
+                         f"dès {p.db_start_age} ans"])
+        elif p.db_pension > 0:
             rows.append(["Rente PD", f"{_fmt(p.db_pension)} dès {p.db_start_age} ans ({p.db_status})"])
         if p.part_time_income > 0:
             rows.append(["Emploi après retraite",

@@ -66,8 +66,9 @@ class ContributionsConfig:
 class PersonConfig:
     name: str
     birth_year: int
+    birth_month: int = 0               # 0 = inconnu: retraite selon retirement_month, prestations dès janvier
     retirement_age: int = 65
-    retirement_month: int = 1          # 1 = retraité toute l'année; 7 = travaille janv.–juin
+    retirement_month: int = 0          # mois du départ (7 = travaille janv.–juin); 0 = auto: mois suivant l'anniversaire, sinon 1er janvier
     life_expectancy: int = 95
     sex: str = "F"                     # M | F (tables de longévité)
     salary: float = 0.0
@@ -87,6 +88,16 @@ class PersonConfig:
     db_penalty_per_year: float = 0.06  # réduction par année d'anticipation
     db_indexed: bool = True
     db_active_growth: float = 0.02     # croissance annuelle: service et salaire
+    # Relevé annuel du régime PD actif (au 31 déc. précédant l'année de départ);
+    # vide = repli sur db_pension × croissance
+    db_service_years: float = 0.0
+    db_avg_salary: float = 0.0
+    db_accrual_rate: float = 0.02
+    db_avg_years: int = 3
+    db_max_service: float = 35.0       # 0 = aucun plafond
+    db_coordination: str = "none"      # none | step (taux réduit sous le MGA) | bridge (réduction à 65 ans)
+    db_rate_below_mga: float = 0.015
+    db_bridge_rate: float = 0.007
     # Prestations gouvernementales
     rrq_monthly_at_65: float = 0.0
     rrq_start_age: int = 65
@@ -94,6 +105,12 @@ class PersonConfig:
     oas_residence_years: int = 40
     accounts: AccountsConfig = field(default_factory=AccountsConfig)
     contributions: ContributionsConfig = field(default_factory=ContributionsConfig)
+
+    @property
+    def db_from_statement(self) -> bool:
+        """Rente PD active calculée à partir du relevé (service × taux × salaire moyen)."""
+        return (self.db_status == "active" and self.db_service_years > 0
+                and self.db_avg_salary > 0)
 
 
 @dataclass

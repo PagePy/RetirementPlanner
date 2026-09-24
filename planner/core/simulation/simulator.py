@@ -131,28 +131,78 @@ class HouseholdSimulator:
     def _db_pension_for_year(self, st: _PersonState, year: int, age: int) -> float:
         cfg = st.cfg
         status = self._db_status(cfg)
-        if (status == "none" or cfg.db_pension <= 0
+        formula = cfg.db_from_statement
+        if (status == "none" or (cfg.db_pension <= 0 and not formula)
                 or (status != "in_payment" and age < cfg.db_start_age)):
             return 0.0
 
         start_year_pd = cfg.birth_year + cfg.db_start_age
         base = cfg.db_pension
+        bridge = 0.0
         if status == "in_payment":
             start_year_pd = self.start_year
         else:
-            years_to_start = max(0, start_year_pd - self.start_year)
-            if status == "active" and years_to_start:
-                base *= (1 + cfg.db_active_growth) ** years_to_start
-            elif status == "closed_salary_linked" and years_to_start:
-                base *= (1 + cfg.salary_growth) ** years_to_start
+            years_to_start = max(0.0, start_year_pd - self.start_year
+                                 + self._db_start_offset(cfg))
+            retirement_year = cfg.birth_year + cfg.retirement_age
+            years_worked = 0.0
+            if retirement_year >= self.start_year:
+                years_worked = (retirement_year - self.start_year
+                                + self._work_fraction(cfg, cfg.retirement_age))
+            # La rente cesse de croître à la retraite, même si son début est reporté.
+            growth_years = min(years_to_start, years_worked)
+            if formula:
+                base, bridge = self._db_formula_pension(cfg, growth_years)
+            elif status == "active" and growth_years:
+                base *= (1 + cfg.db_active_growth) ** growth_years
+            elif status == "closed_salary_linked" and growth_years:
+                base *= (1 + cfg.salary_growth) ** growth_years
 
         penalty_years = max(0, cfg.db_normal_age - cfg.db_start_age)
         if status != "in_payment":
             base *= max(0.0, 1 - penalty_years * cfg.db_penalty_per_year)
+        if age >= self.rrq.p["reference_age"]:
+            base = max(0.0, base - bridge)
 
         if cfg.db_indexed:
             return base * (1 + self.scen.inflation) ** max(0, year - start_year_pd)
         return base
+
+    def _db_start_offset(self, cfg: PersonConfig) -> float:
+        """Part de l'année de début de la rente PD écoulée avant le premier versement."""
+        if cfg.db_start_age == cfg.retirement_age:
+            return self._work_fraction(cfg, cfg.retirement_age)
+        return cfg.birth_month / 12.0
+
+    @staticmethod
+    def _first_year_fraction(cfg: PersonConfig) -> float:
+        """Part de l'année versée quand une prestation débute le mois suivant l'anniversaire."""
+        return 1.0 - cfg.birth_month / 12.0 if cfg.birth_month else 1.0
+
+    def _db_formula_pension(self, cfg: PersonConfig,
+                            years_worked: float) -> tuple[float, float]:
+        """Rente selon le relevé: (rente annuelle, réduction de coordination dès 65 ans)."""
+        service = cfg.db_service_years + years_worked
+        if cfg.db_max_service > 0:
+            service = min(service, cfg.db_max_service)
+        n = max(1, int(cfg.db_avg_years))
+        end = int(self.start_year + years_worked)  # première année non complète
+        window = range(end - n, end)
+        if end <= self.start_year:
+            avg_salary = cfg.db_avg_salary
+        else:
+            avg_salary = sum(cfg.salary * (1 + cfg.salary_growth) ** (y - self.start_year)
+                             for y in window) / n
+        avg_mga = sum(self.rrq.p["mga"] * (1 + self.scen.inflation) ** (y - self.start_year)
+                      for y in window) / n
+        coordinated = min(avg_salary, avg_mga)
+        if cfg.db_coordination == "step":
+            return service * (cfg.db_rate_below_mga * coordinated
+                              + cfg.db_accrual_rate * (avg_salary - coordinated)), 0.0
+        pension = cfg.db_accrual_rate * service * avg_salary
+        if cfg.db_coordination == "bridge":
+            return pension, cfg.db_bridge_rate * service * coordinated
+        return pension, 0.0
 
     # ---------- boucle principale ----------
     def run(self) -> list[HouseholdYearResult]:
@@ -515,8 +565,9 @@ class HouseholdSimulator:
             return 1.0
         if age > cfg.retirement_age:
             return 0.0
-        month = min(12, max(1, cfg.retirement_month))
-        return (month - 1) / 12.0
+        if cfg.retirement_month:
+            return (max(1, min(12, cfg.retirement_month)) - 1) / 12.0
+        return cfg.birth_month / 12.0  # 1er du mois suivant l'anniversaire (0 si inconnu)
 
     def _spouse_index(self, idx: int) -> int | None:
         for j, st in enumerate(self.states):
@@ -632,17 +683,20 @@ class HouseholdSimulator:
         # Rente PD avec statut, croissance préretraite et pénalité d'anticipation;
         # au prorata si elle débute l'année de la retraite en cours d'année.
         pr.db_pension = self._db_pension_for_year(st, year, age)
-        if fraction < 1.0 and cfg.db_start_age == cfg.retirement_age \
-                and self._db_status(cfg) != "in_payment":
-            pr.db_pension *= fraction
+        if self._db_status(cfg) != "in_payment" and age == cfg.db_start_age:
+            pr.db_pension *= 1.0 - self._db_start_offset(cfg)
         # RRQ (ajustée selon l'âge de début, indexée) + rente de survivant
         if age >= cfg.rrq_start_age and cfg.rrq_monthly_at_65 > 0:
             pr.rrq = self._index(st.rrq_annual_at_start, year)
+            if age == cfg.rrq_start_age:
+                pr.rrq *= self._first_year_fraction(cfg)
         pr.rrq += self._index(st.survivor_rrq, year) if st.survivor_rrq else 0.0
         # SV (report, 75+, résidence)
         oas_base = self.oas.annual_pension(age, cfg.oas_start_age,
                                            cfg.oas_residence_years)
         pr.oas = self._index(oas_base, year)
+        if age == cfg.oas_start_age:
+            pr.oas *= self._first_year_fraction(cfg)
         # Emploi à temps partiel après la retraite
         if cfg.part_time_income > 0 and age <= cfg.part_time_until_age:
             pr.part_time_income = self._index(cfg.part_time_income, year) * fraction
