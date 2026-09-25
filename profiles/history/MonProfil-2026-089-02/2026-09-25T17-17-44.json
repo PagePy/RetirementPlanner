@@ -89,8 +89,7 @@
       "db_rate_below_mga": 1.5,
       "db_bridge_rate": 0.7,
       "birth_date": "1971-07-16",
-      "retirement_start_month": 0,
-      "db_survivor_pct": 60.0
+      "retirement_start_month": 0
     },
     {
       "name": "Femme",
@@ -166,8 +165,7 @@
       "db_rate_below_mga": 1.5,
       "db_bridge_rate": 0.7,
       "birth_date": "1970-10-26",
-      "retirement_start_month": 0,
-      "db_survivor_pct": 60.0
+      "retirement_start_month": 0
     }
   ],
   "debts": [],
