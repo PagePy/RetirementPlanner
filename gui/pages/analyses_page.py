@@ -45,8 +45,9 @@ def build(state: dict):
                         f"{_fmt(capacity.monthly_income)} / mois").classes(
                             "text-3xl font-bold text-positive")
                     ui.label(
-                        f"{_fmt(capacity.annual_income)} par année, en dollars "
-                        "d'aujourd'hui et indexé selon votre scénario.").classes(
+                        f"{_fmt(capacity.annual_income)} par année en dollars "
+                        f"d'aujourd'hui. Ce montant augmente de {scen.inflation:.1%} "
+                        "par année selon l'inflation du scénario.").classes(
                             "text-gray-600")
                     ui.label(
                         f"Patrimoine financier projeté en {capacity.end_year}: "

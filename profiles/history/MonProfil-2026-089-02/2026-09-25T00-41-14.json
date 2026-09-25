@@ -67,7 +67,7 @@
         "dc_employer_pct": 8.0,
         "dc_employer_fixed": null,
         "celi_fixed_indexed": false,
-        "celi_overflow_to_taxable": false,
+        "celi_overflow_to_taxable": true,
         "spousal_reer_pct": 0.0,
         "spousal_reer_fixed": 0.0
       },
@@ -143,7 +143,7 @@
         "dc_employer_pct": null,
         "dc_employer_fixed": null,
         "celi_fixed_indexed": false,
-        "celi_overflow_to_taxable": false,
+        "celi_overflow_to_taxable": true,
         "spousal_reer_pct": 0.0,
         "spousal_reer_fixed": 0.0
       },
@@ -190,7 +190,7 @@
       "first_year": 2031.0,
       "every_years": 10.0,
       "net_cost": 60000.0,
-      "last_year": 2050.0
+      "last_year": null
     }
   ],
   "special_expenses": [],
