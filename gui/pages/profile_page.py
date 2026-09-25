@@ -338,6 +338,12 @@ def _person_form(p: dict, title: str, state: dict):
                 _num(p, "db_normal_age", "Âge normal (sans pénalité)", max=110)
                 ui.checkbox("Rente indexée une fois en paiement") \
                     .bind_value(p, "db_indexed")
+            with ui.row().classes("gap-4 flex-wrap items-center"):
+                _pct(p, "db_survivor_pct", "Réversible au conjoint", min=0) \
+                    .tooltip("Part de la rente versée au conjoint survivant après le décès "
+                             "(60 % dans la plupart des régimes; 0 = rente sur une seule tête). "
+                             "Si le décès survient avant le début de la rente, la part est versée "
+                             "à partir de l'âge de début prévu.")
 
             with ui.column().classes("w-full gap-2") as coordination:
                 with ui.row().classes("gap-4 flex-wrap items-center"):

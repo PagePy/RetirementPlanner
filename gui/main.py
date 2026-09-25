@@ -8,7 +8,7 @@ from nicegui import ui
 
 from gui import state as state_mod
 from gui.pages import profile_page, patrimoine_page, resultats_page
-from gui.pages import analyses_page, outils_page
+from gui.pages import analyses_page, outils_page, help_page
 from planner.core.data_status import warning_message
 
 log = logging.getLogger(__name__)
@@ -56,6 +56,7 @@ def build_app():
             tab_resultats = ui.tab("📈 Résultats")
             tab_analyses = ui.tab("🔬 Analyses")
             tab_outils = ui.tab("🎯 Outils")
+            tab_aide = ui.tab("❓ Aide")
 
         with ui.tab_panels(tabs, value=tab_profil).classes("w-full"):
             with ui.tab_panel(tab_profil):
@@ -68,6 +69,8 @@ def build_app():
                 analyses_page.build(app_state)
             with ui.tab_panel(tab_outils):
                 outils_page.build(app_state)
+            with ui.tab_panel(tab_aide):
+                help_page.build(app_state)
 
     with ui.header().classes("bg-primary items-center"):
         ui.label("🏖️ Planificateur de retraite").classes("text-xl font-bold")

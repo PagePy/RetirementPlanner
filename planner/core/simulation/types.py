@@ -98,6 +98,8 @@ class PersonConfig:
     db_coordination: str = "none"      # none | step (taux réduit sous le MGA) | bridge (réduction à 65 ans)
     db_rate_below_mga: float = 0.015
     db_bridge_rate: float = 0.007
+    # Part de la rente PD réversible au conjoint survivant (0 = aucune)
+    db_survivor_pct: float = 0.6
     # Prestations gouvernementales
     rrq_monthly_at_65: float = 0.0
     rrq_start_age: int = 65
@@ -129,6 +131,7 @@ class AnnuityConfig:
     source: str = "reer"
     indexed: bool = False
     taxable_fraction: float | None = None  # défaut selon la source
+    survivor_pct: float = 0.6          # part réversible au conjoint survivant (0 = rente sur une tête)
     name: str = "Rente viagère"
 
     def default_taxable_fraction(self) -> float:
@@ -245,6 +248,10 @@ class PersonYearResult:
     tax_total: float = 0.0
     oas_clawback: float = 0.0
     marginal_rate: float = 0.0
+    # Entrée/résultat exacts du calcul d'impôt (après fractionnement), pour audit.
+    tax_input: object | None = None
+    tax_result: object | None = None
+    price_factor: float = 1.0
     # Flux
     net_cash: float = 0.0
     # Soldes de fin d'année
@@ -256,6 +263,10 @@ class PersonYearResult:
     bal_frv: float = 0.0
     bal_taxable: float = 0.0
     taxable_unrealized_gain: float = 0.0
+    # Droits de cotisation inutilisés à la fin de l'année
+    reer_room: float = 0.0
+    celi_room: float = 0.0
+    celiapp_room: float = 0.0
 
     @property
     def wealth(self) -> float:
@@ -283,6 +294,7 @@ class HouseholdYearResult:
     asset_sale_proceeds: float = 0.0 # produits de ventes d'actifs de l'année
     reinvested: float = 0.0          # surplus de retraite réinvesti (CELI puis non-enr.)
     shortfall_note: str = ""         # pourquoi la cible n'est pas atteinte (vide sinon)
+    decisions: list[str] = field(default_factory=list)  # journal des décisions de l'année
     total_fees: float = 0.0          # frais de gestion payés dans l'année
     rental_income: float = 0.0       # loyers nets du ménage
     insurance_premiums: float = 0.0  # primes d'assurance vie de l'année

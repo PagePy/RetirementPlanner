@@ -21,7 +21,7 @@ Le SRG est calculé sur le revenu imposable (hors SV) résultant des retraits,
 et le solveur le compte comme revenu disponible: il retire donc moins quand
 le SRG est versé, au lieu de retirer puis réinvestir l'excédent.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import logging
 
 from planner.core.accounts import REER, CELI, CELIAPP, FERR, FRV, Taxable
@@ -56,6 +56,8 @@ class _PersonState:
     lives_alone: bool = False
     rrq_annual_at_start: float = 0.0  # rente RRQ annuelle (dollars du début)
     survivor_rrq: float = 0.0
+    # Rente PD réversible héritée: (état du défunt, fraction)
+    survivor_db: tuple | None = None
     # Cotisations REER de conjoint reçues {année: montant} (règle des 3 ans)
     spousal_contribs: dict = field(default_factory=dict)
     # Situation fiscale de l'année en cours (remplie par le simulateur)
@@ -76,6 +78,8 @@ class HouseholdSimulator:
         self.states = [self._init_state(p) for p in household.persons]
         self.debts = [Debt(cfg=d) for d in household.debts]
         self.assets = [RealAsset(cfg=a) for a in household.real_assets]
+        self._purchased_annuities: set[int] = set()
+        self._death_year: dict[int, int] = {}
         if scenario.end_year:
             self.end_year = scenario.end_year
         else:
@@ -118,6 +122,17 @@ class HouseholdSimulator:
     # ---------- indexation ----------
     def _index(self, amount: float, year: int) -> float:
         return amount * (1 + self.scen.inflation) ** (year - self.start_year)
+
+    # ---------- journal ----------
+    def _note(self, text: str) -> None:
+        self._journal.append(text)
+
+    def _who(self, idx: int) -> str:
+        return self.hh.persons[idx].name or f"Personne {idx + 1}"
+
+    @staticmethod
+    def _money(x: float) -> str:
+        return f"{x:,.0f} $".replace(",", " ")
 
     def _price_factor(self, year: int) -> float:
         """Niveau des prix de `year` par rapport aux barèmes de l'année de départ."""
@@ -213,11 +228,15 @@ class HouseholdSimulator:
 
     def _simulate_year(self, year: int) -> HouseholdYearResult:
         hh_result = HouseholdYearResult(year=year)
+        self._journal = hh_result.decisions
 
         # 1. Décès et roulements
         self._pending_payout = 0.0
         self._handle_deaths(year)
         hh_result.insurance_payout = self._pending_payout
+        if hh_result.insurance_payout > 0:
+            self._note(f"Capital-décès de {self._money(hh_result.insurance_payout)} versé au "
+                       "survivant (non-enregistré, libre d'impôt).")
 
         alive_states = [s for s in self.states if s.alive]
         person_results: list[PersonYearResult] = []
@@ -237,8 +256,13 @@ class HouseholdSimulator:
             if year > self.start_year:
                 st.celi.new_year(year)
             if age >= 71 and st.reer.balance > 0:
-                st.ferr.balance += st.reer.convert_to_ferr()
+                converted = st.reer.convert_to_ferr()
+                st.ferr.balance += converted
+                self._note(f"{st.cfg.name}: REER de {self._money(converted)} converti en FERR "
+                           f"({age} ans).")
             if st.cri_balance > 0 and (age >= 71 or (work == 0.0 and age >= 55)):
+                self._note(f"{st.cfg.name}: CRI de {self._money(st.cri_balance)} converti en FRV "
+                           f"({age} ans, {'71 ans atteints' if age >= 71 else 'retraite'}).")
                 st.frv.balance += st.cri_balance
                 st.cri_balance = 0.0
 
@@ -280,7 +304,8 @@ class HouseholdSimulator:
         # 4a. Partage de la rente RRQ entre conjoints
         self._apply_rrq_sharing(person_results)
 
-        # 4a'. Rentes viagères (achat et versements) et primes d'assurance
+        # 4a'. Rentes réversibles au survivant, rentes viagères et primes d'assurance
+        self._apply_survivor_db(year, person_results)
         self._process_annuities(year, person_results)
         self._process_insurance_premiums(year, hh_result, person_results)
 
@@ -308,6 +333,20 @@ class HouseholdSimulator:
             target = None
         hh_result.target_net = target if target is not None else special
         hh_result.special_expenses = special
+        if target is not None:
+            parts = [f"cible {self._money(self._year_target(year))}"]
+            if hh_result.debt_service > 0:
+                parts.append(f"dettes {self._money(hh_result.debt_service)}")
+            if hh_result.insurance_premiums > 0:
+                parts.append(f"assurance {self._money(hh_result.insurance_premiums)}")
+            if retired_fraction < 1.0:
+                parts.append(f"× {retired_fraction:.0%} de l'année à la retraite")
+            if hh_result.vehicle_expenses > 0:
+                parts.append(f"véhicule {self._money(hh_result.vehicle_expenses)}")
+            self._note(f"Besoin net de l'année: {self._money(target)} (" + ", ".join(parts) + ").")
+        elif special > 0:
+            self._note(f"Accumulation: seules les dépenses ponctuelles de "
+                       f"{self._money(special)} sont à financer par retraits.")
         hh_result.shortfall_note = self._solve_withdrawals(
             year, alive_states, person_results, target, special)
 
@@ -326,6 +365,9 @@ class HouseholdSimulator:
         # 5c. Surplus (minimums FERR/FRV forcés) réinvesti plutôt que perdu
         if target is not None:
             hh_result.reinvested = self._reinvest_surplus(person_results, target)
+        elif special <= 0 and sum(p.net_cash for p in person_results if p.alive) > 0:
+            self._note("Accumulation: le net encaissé des salaires couvre le train de vie "
+                       "(aucune cible à combler).")
 
         # Soldes de fin d'année
         for st, pr in zip(self.states, person_results):
@@ -339,6 +381,9 @@ class HouseholdSimulator:
             pr.bal_frv = st.frv.balance
             pr.bal_taxable = st.taxable.balance
             pr.taxable_unrealized_gain = st.taxable.unrealized_gain
+            pr.reer_room = st.reer.contribution_room
+            pr.celi_room = st.celi.contribution_room
+            pr.celiapp_room = st.celiapp.contribution_room
 
         hh_result.persons = person_results
         hh_result.net_cash = sum(p.net_cash for p in person_results)
@@ -357,19 +402,60 @@ class HouseholdSimulator:
         return hh_result
 
     # ---------- rentes viagères et assurance vie ----------
+    def _apply_survivor_db(self, year: int,
+                           person_results: list[PersonYearResult]) -> None:
+        """Rente PD réversible: le survivant reçoit la fraction convenue de la rente
+        que le défunt aurait touchée cette année (même indexation, même début)."""
+        for i, st in enumerate(self.states):
+            if not st.alive or not st.survivor_db:
+                continue
+            deceased, pct = st.survivor_db
+            would_be_age = year - deceased.cfg.birth_year
+            amount = pct * self._db_pension_for_year(deceased, year, would_be_age)
+            if amount <= self.TOLERANCE:
+                continue
+            pr = person_results[i]
+            pr.db_pension += amount
+            sit = st._tax_situation
+            sit["ordinary"] += amount
+            sit["pension_eligible"] += amount  # rente PD: admissible à tout âge
+            sit["cash"] += amount
+            if year == self._death_year.get(id(deceased)):
+                self._note(f"{st.cfg.name}: rente PD de survivant de {self._money(amount)}/an "
+                           f"({pct:.0%} de la rente de {deceased.cfg.name}).")
+
     def _process_annuities(self, year: int,
                            person_results: list[PersonYearResult]) -> None:
-        for ann in self.hh.annuities:
+        for k, ann in enumerate(self.hh.annuities):
             if ann.person_index >= len(self.states):
                 continue
             st = self.states[ann.person_index]
             pr = person_results[ann.person_index]
-            if not st.alive or year < ann.purchase_year:
+            if year < ann.purchase_year:
                 continue
+            fraction = 1.0
+            if not st.alive:
+                # Rente réversible: versements réduits au conjoint survivant
+                survivor = self._spouse_index(ann.person_index)
+                if (k not in self._purchased_annuities or survivor is None
+                        or ann.survivor_pct <= 0):
+                    continue
+                st = self.states[survivor]
+                pr = person_results[survivor]
+                fraction = ann.survivor_pct
+                if year == self._death_year.get(id(self.states[ann.person_index])):
+                    self._note(f"{st.cfg.name}: rente « {ann.name} » réversible à "
+                               f"{fraction:.0%} — versements maintenus au survivant.")
             sit = st._tax_situation
             if year == ann.purchase_year:
                 self._buy_annuity(st, pr, ann)
-            payment = ann.annual_payment * (
+                self._purchased_annuities.add(k)
+                self._note(f"{st.cfg.name}: achat de la rente « {ann.name} » — prime "
+                           f"{self._money(ann.premium)} prélevée du {SOURCE_LABELS.get(ann.source, ann.source)}, "
+                           f"versement {self._money(ann.annual_payment)}/an"
+                           + (f", réversible à {ann.survivor_pct:.0%}" if ann.survivor_pct > 0 else "")
+                           + ".")
+            payment = fraction * ann.annual_payment * (
                 (1 + self.scen.inflation) ** (year - ann.purchase_year)
                 if ann.indexed else 1.0)
             taxable = payment * ann.default_taxable_fraction()
@@ -454,15 +540,23 @@ class HouseholdSimulator:
             amt = st.reer.withdraw(room)
             pr.wd_reer += amt
             room -= amt
+            from_ferr = 0.0
             if room > self.TOLERANCE and st.ferr.balance > 0:
-                extra = st.ferr.withdraw(room)
-                pr.wd_ferr += extra
+                from_ferr = st.ferr.withdraw(room)
+                pr.wd_ferr += from_ferr
                 if pr.age >= 65:
-                    sit["pension_eligible"] += extra
-                amt += extra
+                    sit["pension_eligible"] += from_ferr
+                amt += from_ferr
             pr.meltdown_withdrawal = amt
             sit["ordinary"] += amt
             sit["cash"] += amt
+            if amt > self.TOLERANCE:
+                self._note(f"Fonte du REER — {st.cfg.name}: retrait volontaire de "
+                           f"{self._money(amt)} pour porter le revenu imposable au plancher "
+                           f"{self._money(floor_now)}"
+                           + (f" (dont {self._money(from_ferr)} du FERR)" if from_ferr > self.TOLERANCE else "")
+                           + ("; plancher non atteint (comptes épuisés)" if room - from_ferr > self.TOLERANCE else "")
+                           + ".")
 
     # ---------- actifs réels et passifs ----------
     def _process_assets_and_debts(self, year: int,
@@ -494,12 +588,20 @@ class HouseholdSimulator:
                 sale = asset.sell()
                 proceeds = sale["proceeds"]
                 # Rembourser la dette liée
+                paid_off = 0.0
                 if asset.cfg.linked_debt:
                     for debt in self.debts:
                         if debt.cfg.name == asset.cfg.linked_debt:
-                            proceeds -= debt.payoff()
+                            paid_off = debt.payoff()
+                            proceeds -= paid_off
                             break
                 proceeds = max(0.0, proceeds)
+                self._note(f"Vente de « {asset.cfg.name} »: produit {self._money(sale['proceeds'])}"
+                           + (f", dette liée remboursée {self._money(paid_off)}" if paid_off else "")
+                           + f" → {self._money(proceeds)} au non-enregistré"
+                           + (f"; gain imposable {self._money(sale['taxable_gain'])}"
+                              if sale["taxable_gain"] > 0 else "; aucun gain imposable")
+                           + ".")
                 # Le produit net va au compte non-enregistré (PBR = produit)
                 recipient.taxable.contribute(proceeds)
                 hh_result.asset_sale_proceeds += proceeds
@@ -525,9 +627,13 @@ class HouseholdSimulator:
                          and year >= self.hh.premature_death.get("year", 10**9))
             if age > st.cfg.life_expectancy or premature:
                 st.alive = False
+                self._note(f"Décès de {st.cfg.name} ({age} ans"
+                           + (", scénario de décès prématuré" if premature else "") + ").")
                 survivors = [s for s in self.states if s.alive]
                 if survivors:
                     self._rollover_to_survivor(st, survivors[0], year)
+                    self._note(f"Roulement des comptes de {st.cfg.name} à {survivors[0].cfg.name} "
+                               "sans impôt; rente de survivant RRQ activée.")
                     self._pending_payout += self._pay_death_benefits(
                         i, survivors[0], year)
 
@@ -546,6 +652,9 @@ class HouseholdSimulator:
         survivor.survivor_rrq = self.rrq.survivor_pension(
             deceased_rrq_now, survivor_rrq_now)
         survivor.lives_alone = True
+        if deceased.cfg.db_survivor_pct > 0 and self._db_status(deceased.cfg) != "none":
+            survivor.survivor_db = (deceased, deceased.cfg.db_survivor_pct)
+        self._death_year[id(deceased)] = year
         deceased.reer.balance = deceased.ferr.balance = deceased.frv.balance = 0.0
         deceased.celi.balance = deceased.taxable.balance = deceased.taxable.acb = 0.0
         deceased.cri_balance = 0.0
@@ -705,6 +814,12 @@ class HouseholdSimulator:
         pr.frv_min = st.frv.min_withdrawal(age)
         pr.wd_ferr = st.ferr.withdraw(pr.ferr_min)
         pr.wd_frv = st.frv.withdraw(pr.frv_min)
+        if pr.wd_ferr + pr.wd_frv > self.TOLERANCE:
+            parts = [f"FERR {self._money(pr.wd_ferr)}"] if pr.wd_ferr > self.TOLERANCE else []
+            parts += [f"FRV {self._money(pr.wd_frv)}"] if pr.wd_frv > self.TOLERANCE else []
+            self._note(f"{cfg.name}: retraits minimums obligatoires — " + ", ".join(parts)
+                       + f" ({age} ans"
+                       + (", âge du conjoint" if st.ferr.use_spouse_age else "") + ").")
 
         pension_eligible = eligible_pension_for_splitting(
             age, pr.db_pension, pr.wd_ferr + pr.wd_frv)
@@ -746,6 +861,9 @@ class HouseholdSimulator:
             pr.rrq_shared_delta = delta
             st._tax_situation["ordinary"] += delta
             st._tax_situation["cash"] += delta
+            if delta > self.TOLERANCE:
+                self._note(f"Partage RRQ: {self._money(delta)} transférés au profit de "
+                           f"{st.cfg.name}.")
 
     # ---------- cible et solveur ----------
     def _year_target(self, year: int) -> float:
@@ -836,7 +954,17 @@ class HouseholdSimulator:
         gap = target - current_net
         if gap <= self.TOLERANCE:
             self._apply_extras(person_results, extras)
+            self._note(f"Net avant retraits additionnels {self._money(current_net)} couvre le besoin: "
+                       "aucun retrait"
+                       + (f", surplus de {self._money(-gap)} à réinvestir" if -gap > self.TOLERANCE else "")
+                       + ".")
             return ""
+        self._note(f"Net avant retraits additionnels {self._money(current_net)} → manque "
+                   f"{self._money(gap)}; ordre de retrait: "
+                   + " → ".join(SOURCE_LABELS[s] for s in self.hh.withdrawal_order
+                                 if not (s == "celi" and self.hh.celi_strategy == "jamais"))
+                   + (" (CELI exclu par la stratégie «jamais»)"
+                      if self.hh.celi_strategy == "jamais" else "") + ".")
 
         order = [s for s in self.hh.withdrawal_order
                  if not (s == "celi" and self.hh.celi_strategy == "jamais")]
@@ -851,6 +979,7 @@ class HouseholdSimulator:
             available = sum(caps.values())
             if available <= 0:
                 empty.append(source)
+                self._note(f"  {SOURCE_LABELS[source]}: déjà vide, source suivante.")
                 continue
 
             def apply(total: float) -> float:
@@ -858,11 +987,19 @@ class HouseholdSimulator:
                     extras[i][source] = amt
                 return self._household_net(person_results, extras, year)
 
+            def split_text() -> str:
+                parts = [f"{self._who(i)} {self._money(extras[i].get(source, 0.0))}"
+                         for i in alive_idx if extras[i].get(source, 0.0) > self.TOLERANCE]
+                return " (" + ", ".join(parts) + ")" if len(alive_idx) > 1 and parts else ""
+
             # Le retrait maximal suffit-il?
             net_hi = apply(available)
             if net_hi < target - self.TOLERANCE:
                 gap = target - net_hi
                 exhausted.append(source)
+                self._note(f"  {SOURCE_LABELS[source]}: tout retiré, {self._money(available)}"
+                           f"{split_text()} → net {self._money(net_hi)}, manque encore "
+                           f"{self._money(gap)}.")
                 continue  # tout pris, source suivante
             # Recherche binaire du montant total exact
             lo, hi = 0.0, available
@@ -872,11 +1009,16 @@ class HouseholdSimulator:
                     hi = mid
                 else:
                     lo = mid
-            gap = target - apply(hi)
+            net_final = apply(hi)
+            gap = target - net_final
+            self._note(f"  {SOURCE_LABELS[source]}: retrait de {self._money(hi)} sur "
+                       f"{self._money(available)} disponibles{split_text()} → net "
+                       f"{self._money(net_final)}, besoin comblé.")
         self._apply_extras(person_results, extras)
         if gap <= self.TOLERANCE:
             return ""
         note = self._shortfall_note(gap, exhausted, empty)
+        self._note(f"⚠️ Cible non atteinte: {note}.")
         log.info("%d: %s", year, note)
         return note
 
@@ -987,16 +1129,21 @@ class HouseholdSimulator:
             [(i, st) for i, st in enumerate(self.states) if st.alive],
             key=lambda t: person_results[t[0]].taxable_income)
         remaining = surplus
+        placed = []
         for i, st in alive:
             put = st.celi.contribute(remaining)
             person_results[i].contrib_celi += put
             remaining -= put
+            if put > self.TOLERANCE:
+                placed.append(f"CELI de {self._who(i)} {self._money(put)}")
             if remaining <= 0:
                 break
         if remaining > 0:
             i, st = alive[0]
             st.taxable.contribute(remaining)
             person_results[i].contrib_taxable += remaining
+            placed.append(f"non-enregistré de {self._who(i)} {self._money(remaining)}")
+        self._note(f"Surplus de {self._money(surplus)} réinvesti: " + ", ".join(placed) + ".")
         return surplus
 
     # ---------- impôts finaux ----------
@@ -1038,6 +1185,15 @@ class HouseholdSimulator:
             person_results[i].gis = gis
             person_results[i].net_cash += gis
 
+    def _marginal_rate(self, inp, base_tax: float, pf: float) -> float:
+        """Impôt sur 100 $ de revenu ordinaire additionnel (après fractionnement)."""
+        probe = replace(
+            inp, ordinary_income=inp.ordinary_income + 100.0,
+            family_net_income=(inp.family_net_income + 100.0
+                               if inp.family_net_income is not None else None))
+        probe_tax = self.calc.compute(probe, _marginal_probe=False, price_factor=pf).total_tax
+        return (probe_tax - base_tax) / 100.0
+
     def _finalize_taxes(self, year: int, person_results: list[PersonYearResult]) -> None:
         pf = self._price_factor(year)
         alive = [(i, st) for i, st in enumerate(self.states) if st.alive]
@@ -1050,6 +1206,11 @@ class HouseholdSimulator:
                 s1._tax_situation["pension_eligible"],
                 s2._tax_situation["pension_eligible"], steps=10, price_factor=pf)
             transfer = best["transfer_1_to_2"] - best["transfer_2_to_1"]
+            if abs(transfer) > self.TOLERANCE:
+                giver, taker = (i1, i2) if transfer > 0 else (i2, i1)
+                self._note(f"Fractionnement de pension: {self._money(abs(transfer))} de "
+                           f"{self._who(giver)} attribués à {self._who(taker)} "
+                           f"(impôt du couple minimisé à {self._money(best['total'])}).")
             for i, tax_key, cb_key, tr in (
                     (i1, "tax1", "clawback1", -transfer),
                     (i2, "tax2", "clawback2", transfer)):
@@ -1060,6 +1221,11 @@ class HouseholdSimulator:
                 pr.pension_split_received = tr
                 pr.taxable_income = result.taxable_income
                 pr.refundable_credits = result.refundable_credits
+                pr.marginal_rate = self._marginal_rate(
+                    best[f"input{1 if i == i1 else 2}"], result.total_tax, pf)
+                pr.tax_input = best[f"input{1 if i == i1 else 2}"]
+                pr.tax_result = result
+                pr.price_factor = pf
                 pr.net_cash = (self.states[i]._tax_situation["cash"]
                                - pr.tax_total - pr.oas_clawback + pr.refundable_credits)
         else:
@@ -1072,5 +1238,8 @@ class HouseholdSimulator:
                 pr.oas_clawback = self.oas.clawback(
                     r.net_income, st._tax_situation["oas"], pf)
                 pr.refundable_credits = r.refundable_credits
+                pr.tax_input = inputs[i]
+                pr.tax_result = r
+                pr.price_factor = pf
                 pr.net_cash = (st._tax_situation["cash"]
                                - pr.tax_total - pr.oas_clawback + pr.refundable_credits)

@@ -196,13 +196,15 @@ def build(state: dict):
                                   "name": "Rente viagère", "person_index": 0,
                                   "purchase_year": int(state.get("start_year") or 2026) + 10,
                                   "premium": 100000.0, "annual_payment": 6300.0,
-                                  "source": "reer", "indexed": False}),
+                                  "source": "reer", "indexed": False, "survivor_pct": 60.0}),
                                   annuities_section.refresh()))
                 ui.label("Achat d'une rente à vie avec une partie d'un compte: transfert "
                          "de risque de longévité. Le capital quitte le compte l'année "
-                         "d'achat; les versements durent jusqu'au décès.") \
+                         "d'achat; les versements durent jusqu'au décès, puis la part "
+                         "réversible est versée au conjoint survivant.") \
                     .classes("text-gray-500 text-sm")
                 for an in state["annuities"]:
+                    an.setdefault("survivor_pct", 60.0)
                     with ui.row().classes("gap-3 items-end flex-wrap"):
                         ui.input("Nom").bind_value(an, "name").classes("w-32")
                         ui.select(_persons_options(state), label="Rentier") \
@@ -227,6 +229,10 @@ def build(state: dict):
                             .tooltip("Versement indicatif selon l'âge à l'achat (taux du "
                                      "marché approximatifs, rente non réversible).")
                         ui.checkbox("Indexée").bind_value(an, "indexed")
+                        ui.number("Réversible (%)", format="%.0f", min=0, max=100) \
+                            .bind_value(an, "survivor_pct").classes("w-28") \
+                            .tooltip("Part des versements maintenue au conjoint survivant "
+                                     "(0 = rente sur une seule tête).")
                         ui.button(icon="delete", color="negative",
                                   on_click=lambda an=an: (
                                       _remove(state["annuities"], an),

@@ -60,6 +60,7 @@ def couple_tax_with_split(calc: TaxCalculator, oas: OAS,
         "net_income1": r1.net_income, "net_income2": r2.net_income,
         "total": r1.total_tax + r2.total_tax + cb1 + cb2,
         "result1": r1, "result2": r2,
+        "input1": a1, "input2": a2,
     }
 
 

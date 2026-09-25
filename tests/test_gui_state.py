@@ -173,6 +173,73 @@ class TestRapportPDF:
         assert len(pdf) > 20000
 
 
+@pytest.fixture(scope="module")
+def sim():
+    from gui import compute
+    s = state.default_state()
+    s["persons"][0]["accounts"]["reer_balance"] = 200000.0
+    s["persons"][0]["accounts"]["celi_balance"] = 50000.0
+    s["persons"][0]["accounts"]["taxable_balance"] = 80000.0
+    hh, scen = state.to_configs(s)
+    results, estates = compute.simulate_with_estate(hh, scen)
+    return s, results, estates
+
+
+class TestGraphiquesResultats:
+    def test_graphiques_ont_des_traces(self, sim):
+        from gui.pages import resultats_page as rp
+        s, results, estates = sim
+        names = [p["name"] for p in s["persons"][:len(results[0].persons)]]
+        figs = [rp._withdrawals_chart(results), rp._gap_chart(results),
+                rp._tax_rate_chart(results, names), rp._benefits_chart(results),
+                rp._wealth_mix_chart(results), rp._estate_chart(results, estates)]
+        for fig in figs:
+            assert len(fig.data) >= 1
+
+    def test_taux_effectif_protege_division(self):
+        from gui.pages import resultats_page as rp
+        from planner.core.simulation.types import PersonYearResult
+        p = PersonYearResult(year=2030, age=60, taxable_income=0.0, tax_total=0.0)
+        assert rp._effective_rate(p) == 0.0
+
+    def test_sommaire_par_5_ans(self, sim):
+        from gui.pages import resultats_page as rp
+        _, results, _ = sim
+        rows = rp._summary_rows(results)
+        assert len(rows) == -(-len(results) // 5)
+        assert rows[0]["period"].startswith(str(results[0].year))
+        assert all(row["rate"].endswith("%") or row["rate"] == "—" for row in rows)
+
+    def test_bilan_annuel(self, sim):
+        from gui.pages import resultats_page as rp
+        _, results, estates = sim
+        rows = rp._balance_sheet_rows(results, estates)
+        assert len(rows) == len(results)
+        assert rows[0]["net_worth"] == rp._fmt(results[0].net_worth)
+        assert rows[-1]["net_estate"] == rp._fmt(estates[-1].net_estate)
+
+    def test_bilan_sans_succession(self, sim):
+        from gui.pages import resultats_page as rp
+        _, results, _ = sim
+        assert rp._balance_sheet_rows(results, [])[0]["death_tax"] == "—"
+
+    def test_cotisations(self, sim):
+        from gui.pages import resultats_page as rp
+        _, results, _ = sim
+        rows = rp._contribution_rows(results, fmt=lambda x: round(x))
+        first = rows[0]
+        p = results[0].persons[0]
+        assert first["contrib_reer"] == round(p.contrib_reer) and first["contrib_reer"] > 0
+        assert first["total"] == round(p.contrib_reer + p.contrib_celi)
+        assert first["rate"].endswith("%")
+        assert first["reer_room"] == round(p.reer_room) and first["celi_room"] == round(p.celi_room)
+        assert rows[-1]["cumul"] == round(sum(
+            p.contrib_reer + p.contrib_celi + p.contrib_taxable for r in results for p in r.persons))
+        assert len(rp._contributions_chart(results).data) >= 2
+        # Vue par personne: mêmes valeurs pour une personne seule
+        assert rp._contribution_rows(results, 0, fmt=lambda x: round(x))[0]["total"] == first["total"]
+
+
 class TestMigrationLegacy:
     def test_cotisations_cri_migrees_vers_cd_employe(self):
         legacy = {

@@ -78,8 +78,9 @@ EXPECTED = {
         "annees_deficit": 0, "derniere_annee": 2056,
     },
     "couple_pd": {
-        "impot_total": 780567.02, "srg_total": 0.0, "recup_sv": 0.0,
-        "patrimoine_final": 2976547.98, "succession_finale": 2842651.14,
+        # Inclut la rente PD réversible à 60 % versée à P2 après le décès de P1 (2055+).
+        "impot_total": 857422.85, "srg_total": 0.0, "recup_sv": 0.0,
+        "patrimoine_final": 3114162.71, "succession_finale": 2969087.78,
         "annees_deficit": 0, "derniere_annee": 2060,
     },
     "low_income": {

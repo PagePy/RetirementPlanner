@@ -114,6 +114,8 @@ def _assumptions(state: dict, hh, scen) -> list:
                          f"dès {p.db_start_age} ans"])
         elif p.db_pension > 0:
             rows.append(["Rente PD", f"{_fmt(p.db_pension)} dès {p.db_start_age} ans ({p.db_status})"])
+        if hh.is_couple and (p.db_from_statement or p.db_pension > 0):
+            rows.append(["Rente PD réversible au conjoint", f"{p.db_survivor_pct * 100:.0f} %"])
         if p.part_time_income > 0:
             rows.append(["Emploi après retraite",
                          f"{_fmt(p.part_time_income)} jusqu'à {p.part_time_until_age} ans"])
@@ -156,6 +158,30 @@ def _year_table(results) -> Table:
     return _grid(data, widths)
 
 
+_RAW = lambda x: f"{x:,.0f}".replace(",", " ")  # noqa: E731
+
+
+def _table_from_columns(columns: list[dict], rows: list[dict],
+                        first_widths=(1.8 * cm, 1.8 * cm)) -> Table:
+    keys = [c["field"] for c in columns]
+    data = [[Paragraph(c["label"], CELL) for c in columns]]
+    for row in rows:
+        data.append([str(row.get(k, "")) for k in keys])
+    remaining = (25.0 * cm - sum(first_widths)) / (len(keys) - len(first_widths))
+    return _grid(data, list(first_widths) + [remaining] * (len(keys) - len(first_widths)))
+
+
+def _summary_table(results) -> Table:
+    return _table_from_columns(rp.SUMMARY_COLUMNS, rp._summary_rows(results, fmt=_RAW),
+                               first_widths=(2.0 * cm, 2.2 * cm))
+
+
+def _balance_sheet_table(results, estates) -> Table:
+    return _table_from_columns(rp.BALANCE_SHEET_COLUMNS,
+                               rp._balance_sheet_rows(results, estates, fmt=_RAW),
+                               first_widths=(1.3 * cm, 1.6 * cm))
+
+
 def build_pdf(state: dict, hh, scen, results, estates) -> bytes:
     """Construit le rapport complet; retourne les octets du PDF."""
     buf = BytesIO()
@@ -194,7 +220,29 @@ def build_pdf(state: dict, hh, scen, results, estates) -> bytes:
               Paragraph("Évolution du patrimoine", H2),
               _fig_image(rp._wealth_chart(results)), PageBreak(),
               Paragraph("Impôts annuels et succession nette", H2),
-              _fig_image(rp._tax_chart(results, estates)), PageBreak(),
+              _fig_image(rp._tax_chart(results, estates)), PageBreak()]
+    person_names = [p.name for p in hh.persons]
+    detail_charts = [
+        ("Décaissement par compte", rp._withdrawals_chart(results)),
+        ("Écart annuel vs cible et surplus réinvesti", rp._gap_chart(results)),
+        ("Taux d'imposition effectif et marginal", rp._tax_rate_chart(results, person_names)),
+        ("Prestations gouvernementales", rp._benefits_chart(results)),
+        ("Composition du patrimoine financier", rp._wealth_mix_chart(results)),
+    ]
+    if estates:
+        detail_charts.append(("Décomposition de la succession",
+                              rp._estate_chart(results, estates)))
+    for title, fig in detail_charts:
+        story += [Paragraph(title, H2), _fig_image(fig), PageBreak()]
+    story += [Paragraph("Sommaire par tranche de 5 ans", H2),
+              Paragraph("Flux cumulés sur chaque période; placements et valeur nette à la "
+                        "fin de la période. Taux effectif = impôts ÷ revenu imposable.", SMALL),
+              Spacer(1, 0.3 * cm), _summary_table(results), PageBreak(),
+              Paragraph("Bilan annuel (actif / passif)", H2),
+              Paragraph("Soldes à la fin de chaque année. L'impôt au décès et la succession "
+                        "nette supposent le décès de tous les membres du ménage cette année-là.",
+                        SMALL),
+              Spacer(1, 0.3 * cm), _balance_sheet_table(results, estates), PageBreak(),
               Paragraph("Projection annuelle du ménage", H2),
               Paragraph("Montants en dollars courants de chaque année. « Enregistré » = "
                         "retraits REER + FERR/FRV au-delà du minimum; « SRG/créd. » = "

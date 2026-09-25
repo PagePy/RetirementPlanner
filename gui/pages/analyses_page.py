@@ -11,6 +11,81 @@ def _fmt(x: float) -> str:
     return f"{x:,.0f}$".replace(",", " ")
 
 
+_TAX_COLORS = {
+    "Emploi et loyers": "#1565c0", "Rentes d'employeur": "#6a1b9a",
+    "RRQ et SV": "#00838f", "Retraits REER/FERR/FRV": "#ef6c00",
+    "Placements non enregistrés": "#2e7d32", "Récupération SV": "#c62828",
+    "Impôt au décès": "#616161",
+}
+
+
+def _tax_attribution_chart(attribution) -> go.Figure:
+    fig = go.Figure()
+    for source, values in attribution.tax_by_year.items():
+        if any(v > 1 for v in values):
+            fig.add_trace(go.Bar(name=source, x=attribution.years, y=values,
+                                 marker_color=_TAX_COLORS.get(source)))
+    fig.update_layout(barmode="stack", title="Impôt annuel par source de revenu",
+                      height=420, margin=dict(l=40, r=20, t=50, b=40))
+    return fig
+
+
+def _tax_attribution_pie(rows) -> go.Figure:
+    rows = [r for r in rows if r["tax"] > 1]
+    fig = go.Figure(go.Pie(
+        labels=[r["source"] for r in rows], values=[r["tax"] for r in rows],
+        marker_colors=[_TAX_COLORS.get(r["source"]) for r in rows],
+        hole=0.45, sort=False, texttemplate="%{percent:.1%}"))
+    fig.update_layout(title="Impôt à vie (incl. récupération SV et impôt au décès)",
+                      height=420, margin=dict(l=20, r=20, t=50, b=20))
+    return fig
+
+
+def _render_tax_attribution(attribution) -> None:
+    rows = attribution.lifetime()
+    grand_total = attribution.total_tax + attribution.death_tax
+    biggest = max(rows, key=lambda r: r["tax"])
+    with ui.row().classes("gap-4 flex-wrap"):
+        for title, value in [
+                ("Impôt à vie (hors décès)", _fmt(attribution.total_tax)),
+                ("Impôt au décès" + (f" ({attribution.death_year})"
+                                     if attribution.death_year else ""),
+                 _fmt(attribution.death_tax)),
+                ("Total", _fmt(grand_total)),
+                ("Principale source", f"{biggest['source']} ({biggest['share']:.0%})")]:
+            with ui.card().classes("min-w-44"):
+                ui.label(title).classes("text-xs text-gray-500")
+                ui.label(value).classes("text-xl font-bold text-primary")
+    with ui.row().classes("w-full gap-4 flex-wrap"):
+        ui.plotly(_tax_attribution_chart(attribution)).classes("w-full lg:w-[60%]")
+        ui.plotly(_tax_attribution_pie(rows)).classes("w-full lg:w-[36%]")
+    ui.table(columns=[
+        {"name": "source", "label": "Source", "field": "source", "align": "left"},
+        {"name": "gross", "label": "Revenu brut à vie", "field": "gross", "align": "right"},
+        {"name": "tax", "label": "Impôt attribué", "field": "tax", "align": "right"},
+        {"name": "share", "label": "% de l'impôt total", "field": "share", "align": "right"},
+        {"name": "rate", "label": "Taux effectif moyen", "field": "rate", "align": "right"},
+    ], rows=[{
+        "source": r["source"],
+        "gross": _fmt(r["gross"]) if r["gross"] is not None else "—",
+        "tax": _fmt(r["tax"]),
+        "share": f"{r['share']:.1%}",
+        "rate": f"{r['rate']:.1%}" if r["rate"] is not None else "—",
+    } for r in rows]).classes("w-full").props("dense flat bordered")
+    with ui.expansion("ℹ️ Méthode").classes("w-full"):
+        ui.markdown(
+            "L'impôt de chaque personne-année est réparti entre ses sources au "
+            "**prorata de leur part du revenu imposable** (gains en capital inclus "
+            "à 50 %, cotisations REER/CELIAPP déduites du revenu d'emploi, "
+            "fractionnement de pension attribué aux rentes). Toutes les sources "
+            "d'une même année portent donc le même taux; les différences de taux "
+            "effectif moyen viennent des **années** où chaque source est encaissée "
+            "(ex.: retraits REER en années à faible revenu). La récupération de la SV "
+            "et l'impôt au décès (disposition réputée la dernière année simulée) "
+            "sont comptés à part. Les retraits CELI ne génèrent aucun impôt et "
+            "n'apparaissent pas.")
+
+
 def build(state: dict):
     with ui.column().classes("w-full gap-4"):
 
@@ -221,6 +296,26 @@ def build(state: dict):
                                  + (_fmt(current) if current else "aucun")) \
                             .classes("text-sm text-gray-500")
             ui.button("Comparer les planchers", on_click=do_floors)
+
+        # ==================== D'OÙ VIENT L'IMPÔT ====================
+        with ui.card().classes("w-full"):
+            ui.label("🧾 D'où vient l'impôt ?").classes("text-lg font-bold text-primary")
+            ui.label("Répartit l'impôt de chaque année entre vos sources de revenu, "
+                     "et cumule à vie avec la récupération de la SV et l'impôt au décès. "
+                     "Montre quel levier (fonte du REER, CELI, ordre de retrait) "
+                     "pèse le plus.").classes("text-gray-500 text-sm")
+            tax_area = ui.column().classes("w-full")
+
+            async def do_tax_attribution():
+                tax_area.clear()
+                with tax_area:
+                    ui.spinner()
+                hh, scen = to_configs(state)
+                attribution = await run.cpu_bound(compute.tax_attribution, hh, scen)
+                tax_area.clear()
+                with tax_area:
+                    _render_tax_attribution(attribution)
+            ui.button("Analyser l'impôt", on_click=do_tax_attribution)
 
         # ==================== LONGÉVITÉ ====================
         with ui.card().classes("w-full"):

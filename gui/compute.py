@@ -1,7 +1,7 @@
 """Fonctions de calcul exécutées hors du thread UI (picklables pour run.cpu_bound)."""
 from planner.core.analysis import (
     estate_timeline, run_all_stress_tests, run_monte_carlo, compare_strategies,
-    compare_income_floors)
+    compare_income_floors, attribute_taxes)
 from planner.core.benefits.breakeven import standard_breakevens
 from planner.core.goals import (
     required_annual_savings, achievable_retirement_age,
@@ -19,6 +19,10 @@ def simulate_with_estate(hh, scen):
     results = HouseholdSimulator(hh, scen).run()
     estates = estate_timeline(results, hh.province, scen.inflation)
     return results, estates
+
+
+def tax_attribution(hh, scen):
+    return attribute_taxes(*simulate_with_estate(hh, scen))
 
 
 def monte_carlo(hh, scen, iterations, volatility):

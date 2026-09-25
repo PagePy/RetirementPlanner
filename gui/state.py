@@ -58,6 +58,7 @@ def _normalize_person_state(person: dict) -> None:
     if birth:
         person["birth_year"] = birth.year
     person.setdefault("db_indexed", True)
+    person.setdefault("db_survivor_pct", 60.0)
     person.setdefault("retirement_month", 1)
     person.setdefault("sex", "F")
     person.setdefault("part_time_income", 0.0)
@@ -92,6 +93,7 @@ def default_person(name: str = "") -> dict:
         "db_status": "none",
         "db_pension": 0.0, "db_start_age": 65, "db_normal_age": 65,
         "db_penalty": 6.0, "db_indexed": True, "db_active_growth": 2.0,
+        "db_survivor_pct": 60.0,
         **DB_STATEMENT_DEFAULTS,
         "rrq_monthly_at_65": 1000.0, "rrq_start_age": 65,
         "oas_start_age": 65, "oas_residence_years": 40,
@@ -181,6 +183,7 @@ def _person_config(p: dict) -> PersonConfig:
         db_coordination=p.get("db_coordination") or "none",
         db_rate_below_mga=_coerce_float(p.get("db_rate_below_mga"), 1.5) / 100,
         db_bridge_rate=_coerce_float(p.get("db_bridge_rate"), 0.7) / 100,
+        db_survivor_pct=_coerce_float(p.get("db_survivor_pct"), 60.0) / 100,
         rrq_monthly_at_65=float(p["rrq_monthly_at_65"]),
         rrq_start_age=int(p["rrq_start_age"]),
         oas_start_age=int(p["oas_start_age"]),
@@ -267,7 +270,8 @@ def to_configs(state: dict) -> tuple[HouseholdConfig, ScenarioConfig]:
             person_index=int(an.get("person_index") or 0),
             purchase_year=int(an["purchase_year"]),
             premium=float(an["premium"]), annual_payment=float(an["annual_payment"]),
-            source=an.get("source") or "reer", indexed=bool(an.get("indexed", False)))
+            source=an.get("source") or "reer", indexed=bool(an.get("indexed", False)),
+            survivor_pct=_coerce_float(an.get("survivor_pct"), 60.0) / 100)
             for an in state.get("annuities", [])],
         life_insurances=[LifeInsuranceConfig(
             name=ins.get("name") or "Assurance vie",

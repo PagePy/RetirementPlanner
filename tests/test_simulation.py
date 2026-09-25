@@ -716,3 +716,81 @@ class TestSurplusReinvesti:
         assert r0.persons[0].contrib_celi == pytest.approx(7000.0)
         assert r0.persons[0].bal_taxable > 0
         assert r0.reinvested == pytest.approx(r0.net_cash - r0.target_net)
+
+
+class TestRentesReversibles:
+    """Rente PD et rente viagère réversibles au conjoint survivant."""
+
+    @staticmethod
+    def _couple(db_survivor_pct=0.6, annuity_pct=0.6, deceased_life=80):
+        from planner.core.simulation.types import AnnuityConfig
+        a = single_person(
+            name="A", birth_year=1960, life_expectancy=deceased_life,
+            db_status="in_payment", db_pension=40000.0, db_indexed=True,
+            db_survivor_pct=db_survivor_pct,
+            accounts=AccountsConfig(reer_balance=300000.0, celi_room=7000.0),
+            contributions=ContributionsConfig())
+        b = single_person(
+            name="B", birth_year=1963, life_expectancy=95, salary=0.0,
+            rrq_monthly_at_65=500.0, accounts=AccountsConfig(celi_room=7000.0),
+            contributions=ContributionsConfig())
+        hh = HouseholdConfig(
+            persons=[a, b], target_net_income=60000.0,
+            annuities=[AnnuityConfig(person_index=0, purchase_year=2028, premium=100000.0,
+                                     annual_payment=7000.0, source="reer",
+                                     survivor_pct=annuity_pct)])
+        results = HouseholdSimulator(hh, ScenarioConfig(start_year=2026, inflation=0.02)).run()
+        return {r.year: r for r in results}
+
+    def test_rente_pd_reversible_60_pct(self):
+        by = self._couple()
+        before = by[2040]   # A vivant (80 ans)
+        death = by[2041]    # A décède (81 > 80)
+        assert before.persons[0].alive and not death.persons[0].alive
+        assert before.persons[1].db_pension == 0.0
+        expected = 0.6 * before.persons[0].db_pension * 1.02
+        assert death.persons[1].db_pension == pytest.approx(expected, rel=1e-6)
+        # Indexée les années suivantes
+        assert by[2042].persons[1].db_pension == pytest.approx(expected * 1.02, rel=1e-6)
+        assert any("rente PD de survivant" in d for d in death.decisions)
+
+    def test_rente_viagere_reversible(self):
+        by = self._couple()
+        before, death = by[2040], by[2041]
+        assert before.persons[0].annuity_income == pytest.approx(7000.0)
+        assert before.persons[1].annuity_income == 0.0
+        assert death.persons[1].annuity_income == pytest.approx(0.6 * 7000.0)
+        assert by[2050].persons[1].annuity_income == pytest.approx(0.6 * 7000.0)
+
+    def test_zero_pct_rien_au_survivant(self):
+        by = self._couple(db_survivor_pct=0.0, annuity_pct=0.0)
+        death = by[2041]
+        assert death.persons[1].db_pension == 0.0
+        assert death.persons[1].annuity_income == 0.0
+
+    def test_pct_programmable(self):
+        by = self._couple(db_survivor_pct=1.0)
+        assert by[2041].persons[1].db_pension == pytest.approx(
+            by[2040].persons[0].db_pension * 1.02, rel=1e-6)
+
+    def test_reversion_imposable_chez_le_survivant(self):
+        by = self._couple()
+        p = by[2041].persons[1]
+        assert p.tax_input.ordinary_income >= p.db_pension + p.annuity_income * 0.999
+        assert p.tax_input.eligible_pension_income >= p.db_pension
+        assert p.tax_total > by[2040].persons[1].tax_total
+
+    def test_deces_avant_debut_de_la_rente(self):
+        """Décès avant l'âge de début: la part réversible commence à l'âge prévu."""
+        a = single_person(name="A", birth_year=1970, retirement_age=65, life_expectancy=60,
+                          db_status="deferred", db_pension=30000.0, db_start_age=65,
+                          db_survivor_pct=0.6, accounts=AccountsConfig(celi_room=7000.0),
+                          contributions=ContributionsConfig())
+        b = single_person(name="B", birth_year=1970, life_expectancy=95, salary=60000.0,
+                          accounts=AccountsConfig(reer_balance=200000.0, celi_room=7000.0))
+        hh = HouseholdConfig(persons=[a, b], target_net_income=40000.0)
+        by = {r.year: r for r in HouseholdSimulator(
+            hh, ScenarioConfig(start_year=2026, inflation=0.0)).run()}
+        assert not by[2031].persons[0].alive            # A meurt à 61 ans
+        assert by[2034].persons[1].db_pension == 0.0    # A aurait eu 64 ans
+        assert by[2035].persons[1].db_pension == pytest.approx(0.6 * 30000.0)
